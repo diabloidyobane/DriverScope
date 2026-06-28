@@ -72,44 +72,46 @@ def _iocreatedriver_hook(emu, api_name, orig, argv):
     drv = emu.drivers[-1]
 
     if HAS_CAPSTONE and init_func_addr:
-        code = bytes(emu.mem_read(init_func_addr, 1024))
+        code = bytes(emu.mem_read(init_func_addr, 2048))
         md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
         md.detail = True
 
-        drv_reg = cs_x86.X86_REG_RCX
-        prev_rax = None
+        reg_vals = {}
+        last_imul_val = None
 
         for insn in md.disasm(code, init_func_addr):
             ops = insn.operands
 
-            if (insn.mnemonic == 'mov' and len(ops) == 2
-                    and ops[0].type == capstone.CS_OP_REG
-                    and ops[1].type == capstone.CS_OP_REG
-                    and ops[1].reg == cs_x86.X86_REG_RCX
-                    and ops[0].reg in (cs_x86.X86_REG_RBX,
-                                       cs_x86.X86_REG_RDI,
-                                       cs_x86.X86_REG_RSI,
-                                       cs_x86.X86_REG_R12)):
-                drv_reg = ops[0].reg
-
             if insn.mnemonic == 'lea' and len(ops) == 2:
                 dst, src = ops
                 if (dst.type == capstone.CS_OP_REG
-                        and dst.reg == cs_x86.X86_REG_RAX
                         and src.type == capstone.CS_OP_MEM
                         and src.mem.base == cs_x86.X86_REG_RIP):
-                    prev_rax = insn.address + insn.size + src.mem.disp
+                    reg_vals[dst.reg] = (
+                        insn.address + insn.size + src.mem.disp)
 
-            if insn.mnemonic == 'mov' and prev_rax and len(ops) == 2:
+            if insn.mnemonic == 'imul' and len(ops) == 3:
+                if ops[2].type == capstone.CS_OP_IMM:
+                    last_imul_val = ops[2].imm
+
+            if insn.mnemonic == 'mov' and len(ops) == 2:
                 dst, src = ops
-                if (src.type == capstone.CS_OP_REG
-                        and src.reg == cs_x86.X86_REG_RAX
-                        and dst.type == capstone.CS_OP_MEM
-                        and dst.mem.base == drv_reg):
-                    offset = dst.mem.disp
+                if (dst.type == capstone.CS_OP_MEM
+                        and src.type == capstone.CS_OP_REG
+                        and src.reg in reg_vals):
+                    disp = dst.mem.disp
+                    index = dst.mem.index
+                    scale = dst.mem.scale
+                    if index == 0:
+                        offset = disp
+                    elif disp == 0x70 and scale == 1 and (
+                            last_imul_val is not None):
+                        offset = 0x70 + 8 * last_imul_val
+                    else:
+                        continue
                     if 0x68 <= offset <= 0x140:
                         emu.mem_write(drv.address + offset,
-                                      struct.pack('<Q', prev_rax))
+                                      struct.pack('<Q', reg_vals[src.reg]))
 
             if insn.mnemonic == 'ret':
                 break
