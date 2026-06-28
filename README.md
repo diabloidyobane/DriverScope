@@ -180,7 +180,15 @@ DriverScope surfaces candidates but doesn't reason about them. A useful workflow
 - *"Compare these handler imports to known LOLDrivers patterns — is this technique novel?"*
 - *"What's the realistic exploit chain if I can call IOCTL `0xfffc4e94` on `acpi.sys`?"*
 
-Claude Opus 4.6 handles long decompilation context well and is the default I tested with. If Anthropic releases a security-specialized model or tier (e.g. extended-thinking or red-team variants) and you have access, those will likely be better still for chain-of-reasoning over multi-step kernel exploit paths. Either way: **DriverScope finds the surface, the model helps you decide what's real.**
+Claude Opus 4.6 handles long decompilation context well and is the default this was tested with.
+
+### Hitting cyber safety blocks?
+
+If you're doing legitimate vulnerability research and Claude's safety filters trip on a prompt (kernel exploit chains, BYOVD primitives, etc.), apply for safeguard adjustment under Anthropic's **Cyber Verification Program**. From Anthropic:
+
+> If you are experiencing cyber blocks on what you believe to be a legitimate use case under our Usage Policy, fill out this form to apply for safeguards adjustment under our Cyber Verification Program. (Organizations on Zero Data Retention are not currently eligible — contact your Anthropic Sales Representative.)
+
+Either way: **DriverScope finds the surface, the model helps you decide what's real.**
 
 ## Deeper IOCTL analysis with IDA
 
