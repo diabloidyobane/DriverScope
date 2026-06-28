@@ -404,6 +404,39 @@ def cmd_bulk(args):
     return 0
 
 
+def cmd_emulate(args):
+    from .emulate import emulate_batch, format_table, HAS_SPEAKEASY
+    from dataclasses import asdict
+
+    if not HAS_SPEAKEASY:
+        print("Error: pip install driverscope[emulate]  (speakeasy-emulator)",
+              file=sys.stderr)
+        return 1
+
+    paths = args.path if isinstance(args.path, list) else [args.path]
+    print(f"  Emulating drivers via Speakeasy...", file=sys.stderr)
+    results = emulate_batch(paths, recursive=not args.no_recursive)
+
+    if not results:
+        print("No .sys files found.")
+        return 0
+
+    if args.json:
+        out = json.dumps([asdict(r) for r in results], indent=2)
+        print(out)
+        if args.export:
+            Path(args.export).write_text(out)
+            print(f"\n  Exported to {args.export}", file=sys.stderr)
+    else:
+        print(format_table(results))
+        if args.export:
+            out = json.dumps([asdict(r) for r in results], indent=2)
+            Path(args.export).write_text(out)
+            print(f"\n  Exported to {args.export}", file=sys.stderr)
+
+    return 0
+
+
 def cmd_triage(args):
     from .triage import (
         triage_findings, load_findings, format_report, HAS_ANTHROPIC
@@ -454,6 +487,8 @@ Pipeline stages:
   scan       Scan .sys files for dangerous kernel imports
   hunt       Zero-day hunter: find novel vulnerable drivers
   ioctl      Extract IOCTL dispatch surface from a driver
+  emulate    Speakeasy emulation: trace DriverEntry, extract device names,
+             PDB paths, debug strings, and primitive classifications
   harvest    Download OEM tools and extract kernel drivers
   regional   Search LOLDrivers by regional vendor (CN/KR/JP/TW/RU)
   wdm        Filter for WDM drivers with physmem primitives
@@ -464,6 +499,8 @@ Examples:
   driverscope scan C:\\drivers --ioctl --json --export findings.json
   driverscope hunt --deep --export hits.json      Full system zero-day scan
   driverscope ioctl driver.sys                    Extract IOCTLs (single file)
+  driverscope emulate driver.sys                  Trace DriverEntry via Speakeasy
+  driverscope emulate C:\\drivers --json           Batch emulate a directory
   driverscope harvest ./output --scan             Download + scan OEM drivers
   driverscope regional --region CN,KR             Regional vendor search
   driverscope bulk --list                         List vendor portals
@@ -558,6 +595,16 @@ Examples:
     p_bulk.add_argument("--scan", action="store_true",
                         help="Scan harvested .sys files after download")
 
+    # -- emulate --
+    p_emu = sub.add_parser("emulate",
+                           help="Speakeasy emulation: trace DriverEntry, "
+                                "extract device names, PDB, debug strings")
+    p_emu.add_argument("path", nargs="+", help=".sys file(s) or directory")
+    p_emu.add_argument("--no-recursive", action="store_true",
+                       help="Don't recurse into subdirectories")
+    p_emu.add_argument("--json", action="store_true", help="JSON output")
+    p_emu.add_argument("--export", help="Export results to JSON file")
+
     # -- triage --
     p_triage = sub.add_parser("triage",
                               help="Bulk Claude API triage of scan/ioctl findings")
@@ -586,6 +633,7 @@ Examples:
         "wdm": cmd_wdm,
         "bulk": cmd_bulk,
         "triage": cmd_triage,
+        "emulate": cmd_emulate,
     }
 
     return commands[args.command](args)

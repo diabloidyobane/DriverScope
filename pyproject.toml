@@ -28,9 +28,10 @@ dependencies = [
 
 [project.optional-dependencies]
 disasm = ["capstone>=5.0"]
+emulate = ["speakeasy-emulator>=1.5"]
 bulk = ["playwright>=1.40", "httpx>=0.25"]
 triage = ["anthropic>=0.34"]
-all = ["capstone>=5.0", "playwright>=1.40", "httpx>=0.25", "anthropic>=0.34"]
+all = ["capstone>=5.0", "speakeasy-emulator>=1.5", "playwright>=1.40", "httpx>=0.25", "anthropic>=0.34"]
 dev = ["pytest>=7.0", "capstone>=5.0"]
 
 [project.scripts]

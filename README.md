@@ -9,6 +9,7 @@
 ![Category](https://img.shields.io/badge/Category-BYOVD_Hunting-8b5cf6?style=flat-square&labelColor=2d3748)
 ![Platform](https://img.shields.io/badge/Platform-Windows-3b82f6?style=flat-square&labelColor=2d3748)
 ![Tools](https://img.shields.io/badge/Tools-Capstone-ef4444?style=flat-square&labelColor=2d3748)
+![Tools](https://img.shields.io/badge/Tools-Speakeasy-ef4444?style=flat-square&labelColor=2d3748)
 ![Tools](https://img.shields.io/badge/Tools-IDA_/_Ghidra-facc15?style=flat-square&labelColor=2d3748)
 ![Usage](https://img.shields.io/badge/Usage-Authorized_Research-f97316?style=flat-square&labelColor=2d3748)
 ![License](https://img.shields.io/badge/License-MIT-22d3ee?style=flat-square&labelColor=2d3748)
@@ -23,7 +24,8 @@ Python 3.10+, Windows. MIT-licensed.
 
 ```bash
 pip install git+https://github.com/diabloidyobane/DriverScope.git
-pip install capstone   # optional, better IOCTL extraction
+pip install capstone              # optional, better IOCTL extraction
+pip install speakeasy-emulator    # optional, driver emulation via Speakeasy
 ```
 
 ## Quick start
@@ -124,6 +126,7 @@ Every flagged import maps to a kernel primitive that BYOVD attacks exploit:
 |---|---|
 | `scan` | Scan .sys files for dangerous kernel imports |
 | `ioctl` | Extract IOCTL dispatch surface from a driver |
+| `emulate` | Speakeasy emulation: trace DriverEntry, extract device names, PDB paths, debug strings |
 | `hunt` | Full-system zero-day hunting pipeline |
 | `harvest` | Download OEM tools and extract embedded drivers |
 | `regional` | Search LOLDrivers by regional vendor (CN/KR/JP/TW/RU) |
@@ -143,6 +146,8 @@ driverscope hunt                                 # zero-day hunt (System32\drive
 driverscope hunt --deep --export hits.json       # include DriverStore + Program Files
 driverscope ioctl driver.sys                     # extract IOCTL codes (single file)
 driverscope ioctl C:\drivers --hits-only         # batch directory, skip empty
+driverscope emulate driver.sys                   # trace DriverEntry via Speakeasy
+driverscope emulate C:\drivers --json            # batch emulate a directory
 driverscope harvest --output ./harvested --scan  # download OEM tools, extract + scan
 driverscope regional --region CN,JP              # LOLDrivers by vendor region
 driverscope wdm C:\drivers                       # WDM-only physmem filter
@@ -204,6 +209,42 @@ OVERALL: CONFIRMED-PRIMITIVE  Driver exposes arbitrary physical R/W via two IOCT
 
 Triage runs concurrently (default 4 in flight). Use `--concurrency 8` if you have API capacity. Default model: `claude-opus-4-6`.
 
+### Speakeasy emulation
+
+The `emulate` subcommand uses [Mandiant Speakeasy](https://github.com/mandiant/speakeasy) to emulate DriverEntry without loading the driver. It traces kernel API calls, extracts device names, PDB paths, debug strings, and classifies primitives from runtime behavior that static import scanning alone can't reach.
+
+```bash
+pip install driverscope[emulate]
+
+driverscope emulate driver.sys                   # single driver
+driverscope emulate C:\drivers --json            # batch directory
+driverscope emulate a.sys b.sys c.sys --export results.json
+```
+
+Real output from 5 drivers (0.8s total wall-clock):
+
+```
+  #  Driver                       Device                EPs Crash PDB                  Primitives
+  -- ---------------------------- --------------------- --- ----- -------------------- ----------
+  1  GlobalVistaVentures_v3.sys   GlobalVistaVentures     6       Kinkajou             CR-Regs, CrossProc-VA, PageTable-Walk, VAD-Inject +4
+  2  signeddrv.sys                                        5       Windows-Memory-Info  CrossProc-VA, KernelMem-Copy, PhysMem-Map
+  3  RTCore64.sys                 RTCore64                5                            PhysMem-Map, PhysMem-Section
+  4  PawnIO.sys                   PawnIO                 15     4 PawnIO_unsigned      MSR-RW, PCI-Config, PhysMem-Direct, VirtMem-RW +1
+  5  AsIO3_system.sys             Asusgio3                5       AsIO3_64.sys         PhysMem-Map, PhysMem-Section
+```
+
+What emulation finds that static import scanning doesn't:
+
+- **Full driver lifecycle**: traces DriverEntry through IRP_MJ_CREATE, IRP_MJ_DEVICE_CONTROL, IRP_MJ_CLOSE, and DriverUnload, with API calls and return values per phase
+- **BSOD crash detection**: PawnIO.sys has 4 crash sites where exported unregister functions dereference null at `[rdx + 8]` (invalid_read = kernel bugcheck on real hardware)
+- **IoCreateDriver resolution**: drivers that create hidden driver objects via `IoCreateDriver` instead of normal `IoCreateDevice` registration are auto-resolved using Capstone to extract the MajorFunction table from the initialization callback
+- **PDB paths**: reveal original project names and build infrastructure (Jenkins CI paths, dev machine directories)
+- **Debug strings**: expose the full capability set in plain English (PawnIO's 37 named R/W operations, GlobalVistaVentures' VAD manipulation + page table walking)
+- **Device names**: signeddrv uses `\Device\WinNotify` and references `\Driver\MouClass` (mouse input interception), invisible to import-only analysis
+- **Runtime imports**: drivers that resolve APIs via `MmGetSystemRoutineAddress` instead of the import table (AsIO3 resolves `IoCreateDeviceSecure` this way)
+
+Emulation runs at ~100ms per driver. It complements the `scan` and `ioctl` subcommands: `scan` catches the import table, `ioctl` maps the dispatch surface, `emulate` reveals everything the developer left in the binary's strings and initialization path.
+
 ### VirusTotal
 
 ```bash
@@ -228,6 +269,7 @@ Cached locally (30-day TTL), auto-throttles to free tier.
 
 - `scanner.py`: PE import scanner, VT/LOLDrivers/Blocklist integration
 - `ioctl.py`: static IOCTL dispatch extraction (Capstone + bytescan)
+- `emulate.py`: Speakeasy driver emulation, DriverEntry tracing, string/PDB/device extraction
 - `hunter.py`: zero-day pipeline with novelty scoring
 - `harvester.py`: OEM tool downloader + .sys extractor
 - `regional.py`: regional vendor search (CN/KR/JP/TW/RU)
