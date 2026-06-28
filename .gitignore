@@ -5,6 +5,7 @@ dist/
 build/
 .eggs/
 *.egg
+.pytest_cache/
 
 # Runtime caches
 loldrivers_cache.json

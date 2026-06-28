@@ -1,142 +1,204 @@
 # DriverScope
 
-**Automated BYOVD hunting pipeline** — scan, triage, and discover vulnerable signed Windows kernel drivers before they appear in public databases.
+**Automated BYOVD hunting pipeline.** Scans Windows kernel drivers for dangerous imports, extracts IOCTL dispatch surfaces, cross-references against [LOLDrivers](https://www.loldrivers.io/) / [MS Blocklist](https://aka.ms/VulnerableDriverBlockList) / [KDU](https://github.com/hfiref0x/KDU), and surfaces novel zero-day candidates not yet in any public database.
 
-DriverScope automates the manual, tedious process of finding Bring Your Own Vulnerable Driver (BYOVD) candidates. It combines PE import analysis, IOCTL dispatch extraction, and cross-referencing against [LOLDrivers.io](https://www.loldrivers.io/), the [Microsoft Vulnerable Driver Blocklist](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/app-control-for-business/design/microsoft-recommended-driver-block-rules), and [KDU](https://github.com/hfiref0x/KDU) — surfacing the **novel candidates** that nobody has documented yet.
+Python 3.10+, Windows. MIT-licensed.
 
-## Why this exists
+---
 
-The BYOVD landscape is well-cataloged for *known* drivers (LOLDrivers tracks 500+, KDU bundles 65+). But thousands of signed drivers ship with OEM tools, regional vendor utilities, and niche hardware monitors — many with the same dangerous primitives (physmem map, MSR read/write, cross-process VA copy) and zero public documentation.
-
-DriverScope closes that gap by automating the entire pipeline:
-
-```
-Harvest → Scan → Classify → Cross-Reference → Filter → Rank → Report
-```
-
-## Features
-
-| Stage | Command | What it does |
-|-------|---------|-------------|
-| **Scan** | `driverscope scan` | Parse PE imports, classify into 18 primitive categories, extract device names |
-| **Hunt** | `driverscope hunt` | Full zero-day pipeline — scan system dirs, filter known, rank novel candidates |
-| **IOCTL** | `driverscope ioctl` | Static IOCTL dispatch extraction — find handler codes without running the driver |
-| **Harvest** | `driverscope harvest` | Download OEM tools (GitHub API + direct URLs), extract bundled .sys drivers |
-| **Regional** | `driverscope regional` | Search LOLDrivers by vendor region (CN/KR/JP/TW/RU) |
-| **WDM Filter** | `driverscope wdm` | Filter for plain WDM drivers (skip KMDF — they need INF install) |
-
-### Primitive categories
-
-DriverScope classifies dangerous imports into 18 categories:
-
-- **PhysMem-Map** — `MmMapIoSpace`, `MmMapLockedPages`, etc.
-- **PhysMem-Section** — `ZwMapViewOfSection`, `ZwOpenSection`
-- **CrossProc-VA** — `MmCopyVirtualMemory`, `ZwReadVirtualMemory`
-- **CR-Regs** — `__readcr0`, `__readcr3`, `__writecr4`
-- **MSR** — `__readmsr`, `__writemsr`
-- **KernelExec** — `MmGetSystemRoutineAddress`, `ZwSetSystemInformation`
-- **Callback-Bypass** — `ObRegisterCallbacks`, `PsSetCreateProcessNotifyRoutine`
-- **I/O-Port** — `READ_PORT_UCHAR`, `__inbyte`
-- ... and 10 more (see `scanner.py` for the full list)
-
-## Installation
+## Install
 
 ```bash
-pip install -e .
-
-# Optional: Capstone for advanced IOCTL extraction
-pip install capstone
+pip install git+https://github.com/diabloidyobane/DriverScope.git
+pip install capstone   # optional, better IOCTL extraction
 ```
-
-Requires Python 3.10+ and Windows (for system driver scanning and KDU extraction).
 
 ## Quick start
 
 ```bash
-# Scan a single driver
-driverscope scan MyDriver.sys
+# scan your system drivers
+driverscope scan C:\Windows\System32\drivers --lol --ioctl
 
-# Scan a directory with LOLDrivers + MS blocklist cross-reference
-driverscope scan C:\drivers --lol --blocklist
-
-# Full zero-day hunt on your system
-driverscope hunt
-
-# Deep scan (includes DriverStore + Program Files — slower)
+# full zero-day hunt
 driverscope hunt --deep --export findings.json
 
-# Extract IOCTL dispatch surface
-driverscope ioctl SomeDriver.sys --json
-
-# Harvest OEM tools and scan the extracted drivers
-driverscope harvest --output ./harvested --scan
-
-# Search LOLDrivers by region
-driverscope regional --region CN,JP
-
-# Filter for WDM-only physmem drivers
-driverscope wdm C:\drivers
+# extract IOCTLs from a specific driver
+driverscope ioctl suspicious.sys --json
 ```
 
-## VirusTotal integration
+---
+
+## Live PoC
+
+Actual output from `C:\Windows\System32\drivers` on a Windows 11 host:
+
+```
+$ driverscope scan C:\Windows\System32\drivers
+
+  SCAN RESULTS — 423 flagged / 463 total (40 clean)
+
+  dxgkrnl.sys       14  x64  YES  PhysMem-Map, MSR, PCI-Config, Token-Priv +10
+  cldflt.sys        10  x64       CrossProc-Attach, PhysMem-Map, Process-Lookup +7
+  storport.sys      10  x64  YES  PhysMem-Map, PhysMem-Section, MDL +7
+  acpi.sys           9  x64  YES  MSR, PCI-Config, PhysMem-Map +6
+  ntfs.sys           9  x64  YES  PhysMem-Map, PhysMem-Unmap, Token-Priv +6
+  tcpip.sys          9  x64  YES  Callback-Bypass, CrossProc-Attach +7
+  ... 417 more
+```
+
+```
+$ driverscope ioctl bam.sys
+
+  bam.sys
+  SHA256: dcf689b7...a5e314c3
+  Method: capstone
+  Dispatcher RVA: 0x11920
+  IOCTLs found: 2
+
+  0x00000004 METHOD_BUFFERED
+    → IoThreadToProcess
+  0x00000003 METHOD_NEITHER
+    → ExAcquirePushLockExclusiveEx
+    → KeEnterCriticalRegion
+```
+
+```
+$ driverscope ioctl acpi.sys
+
+  acpi.sys
+  Method: brute
+  IOCTLs found: 34
+
+  0xfffc4e95 METHOD_IN_DIRECT
+  0xfffc4e94 METHOD_BUFFERED
+  0xfffc4eb3 METHOD_NEITHER
+  0xfffc4ca2 METHOD_OUT_DIRECT
+  ... 30 more
+```
+
+---
+
+## 18 Primitive Classes
+
+Every flagged import maps to a kernel primitive that BYOVD attacks exploit:
+
+| Class | Example Import |
+|---|---|
+| **PhysMem-Map** | `MmMapIoSpace` |
+| **PhysMem-Unmap** | `MmUnmapIoSpace` |
+| **PhysMem-Section** | `ZwMapViewOfSection` |
+| **PhysMem-Copy** | `MmCopyMemory` |
+| **CrossProc-VA** | `ZwReadVirtualMemory` |
+| **CrossProc-Attach** | `KeStackAttachProcess` |
+| **Process-Lookup** | `PsLookupProcessByPid` |
+| **CR-Regs** | `__readcr0`, `__writecr0` |
+| **MSR** | `__readmsr`, `__writemsr` |
+| **Debug-Regs** | `__readdr` |
+| **KernelAlloc** | `ExAllocatePoolWithTag` |
+| **KernelExec** | `MmAllocateContiguous` |
+| **I/O-Port** | `READ_PORT_UCHAR` |
+| **PCI-Config** | `HalGetBusData` |
+| **Interrupt** | `HalSetSystemInformation` |
+| **Registry** | `ZwSetValueKey` |
+| **Token-Priv** | `SePrivilegeCheck` |
+| **Callback-Bypass** | `CmUnRegisterCallback` |
+
+---
+
+## Subcommands
+
+| Command | What it does |
+|---|---|
+| `scan` | Scan .sys files for dangerous kernel imports |
+| `ioctl` | Extract IOCTL dispatch surface from a driver |
+| `hunt` | Full-system zero-day hunting pipeline |
+| `harvest` | Download OEM tools and extract embedded drivers |
+| `regional` | Search LOLDrivers by regional vendor (CN/KR/JP/TW/RU) |
+| `wdm` | Filter for WDM drivers with physmem primitives |
+
+### All options
 
 ```bash
-# Set your API key
-export VT_API_KEY=your_key_here
+driverscope scan driver.sys                      # scan one file
+driverscope scan C:\drivers --lol --blocklist    # scan dir + cross-ref
+driverscope scan C:\drivers --ioctl              # scan + extract IOCTLs
+driverscope scan C:\drivers --ioctl --json       # full JSON output
+driverscope scan C:\drivers --export out.json    # write results to file
+driverscope hunt                                 # zero-day hunt (System32\drivers)
+driverscope hunt --deep --export hits.json       # include DriverStore + Program Files
+driverscope ioctl driver.sys                     # extract IOCTL codes (single file)
+driverscope ioctl C:\drivers --hits-only         # batch directory, skip empty
+driverscope harvest --output ./harvested --scan  # download OEM tools, extract + scan
+driverscope regional --region CN,JP              # LOLDrivers by vendor region
+driverscope wdm C:\drivers                       # WDM-only physmem filter
+```
 
-# Scan with VT hash lookups (auto-throttles to free tier: 4 req/min)
+### VirusTotal
+
+```bash
+export VT_API_KEY=your_key
 driverscope scan C:\drivers --vt
-
-# Or pass the key directly
-driverscope scan driver.sys --vt --vt-key your_key_here
 ```
 
-VT results are cached locally (`vt_cache.json`, 30-day TTL) so re-scans are instant.
+Cached locally (30-day TTL), auto-throttles to free tier.
 
-## Architecture
+---
 
+## How the hunt works
+
+1. Collect .sys files from system dirs or custom paths
+2. Parse PE imports, classify into 18 primitive categories
+3. Filter out drivers already in LOLDrivers, MS Blocklist, or KDU
+4. Filter out MS inbox drivers
+5. Score remaining by primitive weights + signed/x64/IOCTL bonuses
+6. Report top candidates with SHA256, signer, device names, IOCTLs
+
+## Modules
+
+- `scanner.py` — PE import scanner, VT/LOLDrivers/Blocklist integration
+- `ioctl.py` — static IOCTL dispatch extraction (Capstone + bytescan)
+- `hunter.py` — zero-day pipeline with novelty scoring
+- `harvester.py` — OEM tool downloader + .sys extractor
+- `regional.py` — regional vendor search (CN/KR/JP/TW/RU)
+- `wdm_filter.py` — WDM vs KMDF filter
+- `kdu.py` — KDU RMDX database parser
+
+## Deeper IOCTL analysis with IDA
+
+DriverScope's static IOCTL extractor handles most drivers, but complex dispatchers (deeply nested, obfuscated, or virtualized) benefit from IDA Pro's full analysis. Use [re-mcp-ida](https://github.com/mrexodia/ida-pro-mcp) in headless mode:
+
+```bash
+# start IDA headless with the MCP plugin on a driver
+idat64 -A -S"ida_mcp_server.py --port 13337" -L"ida.log" driver.sys
+
+# then point DriverScope at the IOCTL surface
+driverscope ioctl driver.sys --json
 ```
-driverscope/
-├── cli.py          # Unified CLI entry point
-├── scanner.py      # Core PE import scanner + VT/LOLDrivers/MS Blocklist
-├── ioctl.py        # Static IOCTL dispatch extraction (Capstone optional)
-├── hunter.py       # Zero-day hunting pipeline with novelty scoring
-├── harvester.py    # OEM tool downloader + .sys extractor
-├── regional.py     # Regional vendor search (CN/KR/JP/TW/RU)
-├── wdm_filter.py   # WDM vs KMDF filter
-└── kdu.py          # KDU RMDX database parser
-```
 
-## How the zero-day pipeline works
+Combine DriverScope's automated primitive classification with IDA's decompiler output to confirm what each IOCTL handler does before filing a report.
 
-1. **Collect** — Gather .sys files from System32\drivers, DriverStore, Program Files, or custom paths
-2. **Scan** — Parse PE imports and classify into primitive categories
-3. **Filter known** — Remove drivers already in LOLDrivers.io, MS Blocklist, or KDU
-4. **Filter inbox** — Remove MS inbox drivers (ntfs.sys, tcpip.sys, etc.)
-5. **Score** — Rank remaining candidates by:
-   - Primitive class weights (PhysMem-Map=30, CrossProc-VA=20, etc.)
-   - Signed bonus (+20)
-   - x64 bonus (+10)
-   - Device name presence (+10)
-   - IOCTL count bonus (+15)
-6. **Report** — Top candidates with full detail (SHA256, signer, device names, IOCTLs)
+---
 
-## Responsible disclosure
+## Disclosure
 
-This tool is for **defensive security research**. If you discover a novel vulnerable driver:
+If you find a novel vulnerable driver: report to the vendor and [MSRC](https://msrc.microsoft.com/) before publishing. Request addition to the [MS Blocklist](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/app-control-for-business/design/microsoft-recommended-driver-block-rules). Submit to [LOLDrivers](https://www.loldrivers.io/) after vendor response.
 
-1. **Do not** publish the vulnerability details publicly before disclosure
-2. **Report** to the vendor (if contactable) and Microsoft via [MSRC](https://msrc.microsoft.com/)
-3. **Request** the driver be added to the [Microsoft Vulnerable Driver Blocklist](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/app-control-for-business/design/microsoft-recommended-driver-block-rules)
-4. Consider submitting to [LOLDrivers.io](https://www.loldrivers.io/) after the vendor has had time to respond
+## Support
 
-## Related work
+If DriverScope saved you time or surfaced a useful finding, you can support development:
 
-- [LOLDrivers.io](https://www.loldrivers.io/) — Living Off The Land Drivers catalog
-- [KDU](https://github.com/hfiref0x/KDU) — Kernel Driver Utility by hfiref0x
-- [BlackSnufkin/BYOVD](https://github.com/BlackSnufkin/BYOVD) — BYOVD research and POCs
-- [IOCTLance](https://github.com/ioctlance/ioctlance) — Symbolic execution for WDM driver vuln discovery
-- [vulnerable-drivers-ex](https://github.com/lallouslab/vulnerable-drivers-ex) — Import-based driver scanning
+[![ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/mrniceguy412)
+
+## See also
+
+- [LOLDrivers.io](https://www.loldrivers.io/)
+- [KDU](https://github.com/hfiref0x/KDU)
+- [IOCTLance](https://github.com/ioctlance/ioctlance)
+- [DriverBuddy Revolutions](https://github.com/jsacco/driverbuddyrevolutions)
+
+## Credits
+
+- [@jsacco](https://github.com/jsacco) — [DriverBuddy Revolutions](https://github.com/jsacco/driverbuddyrevolutions), which informed parts of the IOCTL/dispatcher detection approach
 
 ## License
 

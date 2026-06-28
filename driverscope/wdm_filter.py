@@ -1,8 +1,4 @@
-"""Filter for plain WDM drivers with physical memory primitives.
-
-Filters OUT any KMDF/WDF drivers (they need INF install, may BSOD on wrong
-hardware). Filters IN drivers with MmMapIoSpace / ZwMapViewOfSection / etc.
-"""
+"""Filter for plain WDM drivers with physical memory primitives."""
 
 import struct
 import sys
@@ -58,7 +54,6 @@ DEVICE_MARKERS = [
 
 
 def scan_pe_imports(data: bytes) -> set[bytes]:
-    """Extract imported function names from a PE file's import table."""
     imports: set[bytes] = set()
     if data[:2] != b"MZ":
         return imports
@@ -145,7 +140,6 @@ def scan_pe_imports(data: bytes) -> set[bytes]:
 
 
 def classify_driver(path: Path) -> Optional[dict]:
-    """Classify a .sys file: WDM vs WDF, dangerous imports, device names."""
     try:
         data = path.read_bytes()
     except Exception:
@@ -199,7 +193,6 @@ def classify_driver(path: Path) -> Optional[dict]:
 
 def scan_for_wdm_physmem(paths: list[str],
                          recursive: bool = True) -> list[dict]:
-    """Scan paths for WDM drivers with physmem primitives."""
     results = []
     for p in paths:
         root = Path(p)

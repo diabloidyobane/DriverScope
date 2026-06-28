@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "driverscope"
 version = "0.1.0"
-description = "Automated BYOVD hunting pipeline — scan, triage, and discover vulnerable signed Windows kernel drivers before they appear in public databases."
+description = "Automated BYOVD hunting pipeline for Windows kernel drivers."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
-authors = [{ name = "MrNiceGuy" }]
+authors = [{ name = "diabloidyobane" }]
 keywords = ["byovd", "driver", "vulnerability", "kernel", "windows", "security-research"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -28,15 +28,14 @@ dependencies = [
 
 [project.optional-dependencies]
 disasm = ["capstone>=5.0"]
-vt = []  # VT uses stdlib urllib — key via env var VT_API_KEY
 dev = ["pytest>=7.0", "capstone>=5.0"]
 
 [project.scripts]
 driverscope = "driverscope.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/MrNiceGuy/DriverScope"
-Issues = "https://github.com/MrNiceGuy/DriverScope/issues"
+Homepage = "https://github.com/diabloidyobane/DriverScope"
+Issues = "https://github.com/diabloidyobane/DriverScope/issues"
 
 [tool.setuptools.packages.find]
 include = ["driverscope*"]

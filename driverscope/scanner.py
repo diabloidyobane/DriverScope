@@ -1,19 +1,17 @@
-"""Core driver scanner — parse PE imports and classify dangerous kernel primitives.
+"""PE import scanner — classify kernel drivers by dangerous import primitives."""
 
-Same methodology as lallouslab/vulnerable-drivers-ex: parse PE imports, match
-against known-dangerous ntoskrnl/HAL symbols, classify into primitive categories,
-rank by attack surface breadth.
-"""
-
+import base64
 import hashlib
+import io
 import json
 import os
-import struct
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -23,10 +21,6 @@ try:
 except ImportError:
     print("ERROR: pefile not installed.  pip install pefile", file=sys.stderr)
     sys.exit(1)
-
-# ---------------------------------------------------------------------------
-# Red-flag imports, grouped by primitive class
-# ---------------------------------------------------------------------------
 
 PRIMITIVE_CLASSES: dict[str, list[str]] = {
     "PhysMem-Map": [
@@ -177,10 +171,6 @@ for _cls_name, _symbols in PRIMITIVE_CLASSES.items():
         _IMPORT_TO_CLASSES.setdefault(_sym, set()).add(_cls_name)
 
 
-# ---------------------------------------------------------------------------
-# PE helpers
-# ---------------------------------------------------------------------------
-
 def sha256_file(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -206,7 +196,6 @@ class DriverResult:
     flagged_imports: list[str] = field(default_factory=list)
     primitive_classes: list[str] = field(default_factory=list)
     score: int = 0
-    strings_of_interest: list[str] = field(default_factory=list)
     device_names: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     # LOLDrivers enrichment
@@ -225,7 +214,6 @@ class DriverResult:
 
 
 def scan_driver(path: str) -> DriverResult:
-    """Scan a single .sys PE and classify its imports."""
     p = Path(path)
     result = DriverResult(path=str(p), filename=p.name)
 
@@ -244,20 +232,15 @@ def scan_driver(path: str) -> DriverResult:
         result.errors.append(f"PE parse error: {e}")
         return result
 
-    # Architecture
     result.is_64bit = pe.FILE_HEADER.Machine == 0x8664
 
-    # Signature check (basic — presence of certificate table)
     try:
         sec_dir = pe.OPTIONAL_HEADER.DATA_DIRECTORY[4]  # IMAGE_DIRECTORY_ENTRY_SECURITY
         result.is_signed = sec_dir.VirtualAddress != 0 and sec_dir.Size != 0
     except (IndexError, AttributeError):
         pass
 
-    # Extract signer from certificate if available
     try:
-        if hasattr(pe, "VS_FIXEDFILEINFO"):
-            pass
         for entry in getattr(pe, "FileInfo", []):
             for st in getattr(entry, "StringTable", []):
                 for item in st.entries.items():
@@ -269,7 +252,6 @@ def scan_driver(path: str) -> DriverResult:
     except Exception:
         pass
 
-    # Imports
     all_imports: list[str] = []
     flagged: list[str] = []
     hit_classes: set[str] = set()
@@ -297,7 +279,6 @@ def scan_driver(path: str) -> DriverResult:
 
 
 def _extract_strings(data: bytes, result: DriverResult) -> None:
-    """Extract device names and interesting strings from PE data."""
     device_markers = [b"\\Device\\", b"\\DosDevices\\", b"\\\\.\\"]
     for marker in device_markers:
         idx = 0
@@ -339,7 +320,6 @@ def _extract_strings(data: bytes, result: DriverResult) -> None:
 
 
 def scan_directory(path: str, recursive: bool = True) -> list[DriverResult]:
-    """Scan all .sys files in a directory."""
     root = Path(path)
     pattern = "**/*.sys" if recursive else "*.sys"
     results = []
@@ -357,10 +337,6 @@ def scan_directory(path: str, recursive: bool = True) -> list[DriverResult]:
     results.sort(key=lambda r: (-r.score, r.filename.lower()))
     return results
 
-
-# ---------------------------------------------------------------------------
-# VirusTotal integration
-# ---------------------------------------------------------------------------
 
 VT_API_BASE = "https://www.virustotal.com/api/v3"
 VT_RATE_LIMIT = 4
@@ -560,10 +536,6 @@ def vt_lookup_hash(sha256: str, api_key: str) -> VTInfo:
     return info
 
 
-# ---------------------------------------------------------------------------
-# LOLDrivers.io catalog
-# ---------------------------------------------------------------------------
-
 LOLDRIVERS_URL = "https://www.loldrivers.io/api/drivers.json"
 
 
@@ -588,7 +560,6 @@ class LOLDriver:
 
 def build_lol_index(cache_path: str = None,
                     max_age_hours: int = 168) -> dict[str, dict]:
-    """Build {sha256: lol_record} index from LOLDrivers.io."""
     if cache_path is None:
         cache_path = os.path.join(os.getcwd(), "loldrivers_cache.json")
 
@@ -663,29 +634,17 @@ def enrich_with_lol(results: list[DriverResult],
             r.lol_tags = rec["tags"]
 
 
-# ---------------------------------------------------------------------------
-# Microsoft Vulnerable Driver Blocklist
-# ---------------------------------------------------------------------------
-
-import base64
-import io
-import re as _re
-import xml.etree.ElementTree as ET
-import zipfile
-
 MS_BLOCKLIST_URL = "https://aka.ms/VulnerableDriverBlockList"
 _blocklist_cache: dict[str, str] = {}
 
 
 def _parse_blocklist_xml(xml_data: bytes) -> dict[str, str]:
-    """Parse MS blocklist XML and extract SHA256 hashes."""
     result: dict[str, str] = {}
     try:
         root = ET.fromstring(xml_data)
     except ET.ParseError:
         return result
 
-    ns = {"ci": "urn:schemas-microsoft-com:sipolicy"}
     for deny in root.iter():
         if "Deny" in deny.tag or "deny" in deny.tag:
             h = deny.get("Hash", "")
@@ -703,9 +662,6 @@ def _parse_blocklist_xml(xml_data: bytes) -> dict[str, str]:
 
 
 def fetch_ms_blocklist(cache_path: str = None) -> dict[str, str]:
-    """Download and parse the MS Vulnerable Driver Blocklist.
-    Returns dict mapping SHA256 hex hashes to driver names.
-    """
     global _blocklist_cache
     if _blocklist_cache:
         return _blocklist_cache

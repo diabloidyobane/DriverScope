@@ -1,21 +1,10 @@
-"""Filter LOLDrivers.io catalog for drivers signed by regional vendors.
-
-Supports CN, KR, JP, TW, RU vendor patterns. Output: ranked list per region
-with HVCI bypass status, MS-blocked status, and primitive classes.
-"""
+"""Filter LOLDrivers.io catalog for drivers signed by regional vendors."""
 
 import json
 import os
 import sys
-from collections import defaultdict
-from pathlib import Path
-from typing import Optional
 
 from .scanner import _IMPORT_TO_CLASSES, build_lol_index
-
-# ---------------------------------------------------------------------------
-# Regional vendor keyword map (case-insensitive substring match)
-# ---------------------------------------------------------------------------
 
 REGIONAL_VENDORS: dict[str, list[str]] = {
     "CN": [
@@ -87,10 +76,6 @@ def _stringify_entry(entry: dict) -> str:
 
 def search_regional(regions: list[str] = None,
                     lol_cache: str = None) -> dict[str, list[dict]]:
-    """Search LOLDrivers catalog for regional vendor entries.
-
-    Returns dict mapping region code to list of matched entries.
-    """
     if regions is None:
         regions = list(REGIONAL_VENDORS.keys())
 

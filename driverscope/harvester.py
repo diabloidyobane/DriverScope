@@ -1,31 +1,20 @@
-"""Download OEM utilities and extract kernel drivers for scanning.
-
-Targets obscure vendor tools that bundle physmem/MSR-capable .sys drivers.
-Uses GitHub API for release URLs and verified direct-download URLs.
-"""
+"""Download OEM utilities and extract kernel drivers for scanning."""
 
 import hashlib
 import json
 import os
 import re
 import shutil
-import struct
 import sys
-import time
 import zipfile
 import tarfile
 from pathlib import Path
 from urllib.request import urlopen, Request
-from urllib.error import URLError, HTTPError
 from urllib.parse import urlparse, unquote
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 GITHUB_API = "https://api.github.com"
 
-
-# ---------------------------------------------------------------------------
-# Source catalog — OEM tools that bundle kernel drivers
-# ---------------------------------------------------------------------------
 
 SOURCES = [
     {
@@ -106,7 +95,6 @@ SOURCES = [
 
 
 def _github_latest_release(repo: str) -> list[dict]:
-    """Get latest release assets from a GitHub repo."""
     url = f"{GITHUB_API}/repos/{repo}/releases/latest"
     req = Request(url)
     req.add_header("User-Agent", USER_AGENT)
@@ -126,7 +114,6 @@ def _github_latest_release(repo: str) -> list[dict]:
 
 
 def _download_file(url: str, dest: Path) -> bool:
-    """Download a file to dest."""
     req = Request(url)
     req.add_header("User-Agent", USER_AGENT)
     try:
@@ -141,7 +128,6 @@ def _download_file(url: str, dest: Path) -> bool:
 
 
 def _extract_sys_files(archive_path: Path, output_dir: Path) -> list[Path]:
-    """Extract .sys files from ZIP/TAR archives."""
     extracted = []
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -173,7 +159,6 @@ def _extract_sys_files(archive_path: Path, output_dir: Path) -> list[Path]:
 
 
 def _extract_pe_resources(pe_path: Path, output_dir: Path) -> list[Path]:
-    """Extract .sys drivers embedded as PE resources."""
     try:
         import pefile
     except ImportError:
@@ -207,12 +192,7 @@ def _extract_pe_resources(pe_path: Path, output_dir: Path) -> list[Path]:
     return extracted
 
 
-def harvest(output_dir: str, categories: list[str] = None,
-            scan_after: bool = False) -> dict:
-    """Run the harvesting pipeline.
-
-    Returns summary dict with counts and paths.
-    """
+def harvest(output_dir: str, categories: list[str] = None) -> dict:
     out = Path(output_dir)
     staging = out / "_staging"
     drivers_dir = out / "drivers"

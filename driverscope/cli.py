@@ -1,4 +1,4 @@
-"""DriverScope CLI — unified entry point for all pipeline stages."""
+"""DriverScope CLI."""
 
 import argparse
 import json
@@ -8,11 +8,10 @@ from pathlib import Path
 
 
 def cmd_scan(args):
-    """Scan .sys files for dangerous kernel imports."""
     from .scanner import (
         scan_driver, scan_directory, build_lol_index, enrich_with_lol,
         fetch_ms_blocklist, enrich_with_blocklist, vt_cache_init,
-        vt_lookup_hash, vt_cache_save, VTQuotaExhausted,
+        vt_lookup_hash, vt_cache_save, VTQuotaExhausted, PRIMITIVE_CLASSES,
     )
 
     path = Path(args.path)
@@ -28,7 +27,6 @@ def cmd_scan(args):
         print("No .sys files found.")
         return 0
 
-    # Optional enrichment
     if args.lol:
         lol_index = build_lol_index()
         enrich_with_lol(results, lol_index)
@@ -58,11 +56,48 @@ def cmd_scan(args):
                     break
         vt_cache_save()
 
-    # Output
+    ioctl_map = {}
+    if args.ioctl:
+        from .ioctl import extract_ioctl_surface, HAS_CAPSTONE
+        method = "capstone" if HAS_CAPSTONE else "bytescan"
+        print(f"\n  Extracting IOCTLs ({method})...", file=sys.stderr)
+        flagged = [r for r in results if r.flagged_imports]
+        for i, r in enumerate(flagged, 1):
+            print(f"\r  [{i}/{len(flagged)}] {r.filename:<40}",
+                  end="", file=sys.stderr, flush=True)
+            try:
+                surface = extract_ioctl_surface(r.path)
+                if surface.ioctls:
+                    ioctl_map[r.sha256] = surface
+            except Exception:
+                pass
+        print(file=sys.stderr)
+
     if args.json:
         from dataclasses import asdict
-        out = [asdict(r) for r in results if r.flagged_imports or args.all]
-        print(json.dumps(out, indent=2))
+        out = []
+        for r in results:
+            if not r.flagged_imports and not args.all:
+                continue
+            d = asdict(r)
+            if r.sha256 in ioctl_map:
+                surface = ioctl_map[r.sha256]
+                d["ioctl_count"] = len(surface.ioctls)
+                d["ioctls"] = [{
+                    "code": hex(e.code),
+                    "device_type": e.ctl.device_type_name,
+                    "function": e.ctl.function,
+                    "method": e.ctl.method_name,
+                    "access": e.ctl.access_name,
+                    "handler_imports": e.handler_imports,
+                    "primitive_classes": e.primitive_classes,
+                } for e in surface.ioctls]
+            out.append(d)
+        text = json.dumps(out, indent=2)
+        print(text)
+        if args.export:
+            Path(args.export).write_text(text)
+            print(f"\n  Exported to {args.export}", file=sys.stderr)
     else:
         flagged = [r for r in results if r.flagged_imports]
         clean = len(results) - len(flagged)
@@ -76,10 +111,16 @@ def cmd_scan(args):
             print("  No drivers with red-flag imports found.")
             return 0
 
+        has_ioctls = bool(ioctl_map)
+        hdr_ioctl = " {'IOCTLs':>6}" if has_ioctls else ""
         print(f"  {'#':<4} {'Driver':<30} {'Score':>5} {'Arch':<5} "
-              f"{'Signed':<6} {'LOL':<4} {'BL':<3} Primitive Classes")
+              f"{'Signed':<6} {'LOL':<4} {'BL':<3}"
+              + (f" {'IOCTLs':>6}" if has_ioctls else "")
+              + f" Primitive Classes")
         print(f"  {'-'*4} {'-'*30} {'-'*5} {'-'*5} {'-'*6} {'-'*4} "
-              f"{'-'*3} {'-'*40}")
+              f"{'-'*3}"
+              + (f" {'-'*6}" if has_ioctls else "")
+              + f" {'-'*40}")
 
         for i, r in enumerate(flagged, 1):
             name = r.filename[:29] if len(r.filename) <= 29 else r.filename[:26] + "..."
@@ -88,10 +129,13 @@ def cmd_scan(args):
             lol = "YES" if r.lol_known else ""
             bl = "BL" if r.ms_blocked else ""
             classes = ", ".join(r.primitive_classes)
+            ioctl_col = ""
+            if has_ioctls:
+                surface = ioctl_map.get(r.sha256)
+                ioctl_col = f" {len(surface.ioctls):>6}" if surface else f" {'':>6}"
             print(f"  {i:<4} {name:<30} {r.score:>5} {arch:<5} "
-                  f"{signed:<6} {lol:<4} {bl:<3} {classes}")
+                  f"{signed:<6} {lol:<4} {bl:<3}{ioctl_col} {classes}")
 
-        # Detail for top 20
         print(f"\n{'-'*100}")
         for r in flagged[:20]:
             print(f"\n  {r.filename}")
@@ -108,17 +152,32 @@ def cmd_scan(args):
             if r.ms_blocked:
                 print(f"    [MS BLOCKED]")
             for cls in r.primitive_classes:
-                from .scanner import PRIMITIVE_CLASSES
                 syms = [s for s in r.flagged_imports
                         if s in PRIMITIVE_CLASSES.get(cls, [])]
                 if syms:
                     print(f"    [{cls}] {', '.join(syms)}")
 
+            if r.sha256 in ioctl_map:
+                surface = ioctl_map[r.sha256]
+                print(f"    IOCTLs: {len(surface.ioctls)} (via {surface.method})")
+                for e in surface.ioctls[:8]:
+                    parts = f"0x{e.code:08X} {e.ctl.device_type_name} {e.ctl.method_name}"
+                    if e.primitive_classes:
+                        parts += f"  [{', '.join(e.primitive_classes)}]"
+                    print(f"      {parts}")
+                if len(surface.ioctls) > 8:
+                    print(f"      ... +{len(surface.ioctls) - 8} more")
+
+        if args.export:
+            from dataclasses import asdict
+            out = [asdict(r) for r in flagged]
+            Path(args.export).write_text(json.dumps(out, indent=2))
+            print(f"\n  Exported to {args.export}", file=sys.stderr)
+
     return 0
 
 
 def cmd_hunt(args):
-    """Run the zero-day hunting pipeline."""
     from .hunter import hunt, format_results
 
     candidates = hunt(
@@ -141,58 +200,88 @@ def cmd_hunt(args):
 
 
 def cmd_ioctl(args):
-    """Extract IOCTL dispatch surface from a driver."""
     from .ioctl import extract_ioctl_surface
 
-    surface = extract_ioctl_surface(args.path)
+    paths = []
+    target = Path(args.path)
+    if target.is_dir():
+        paths = sorted(target.glob("**/*.sys" if not args.no_recursive else "*.sys"))
+    elif target.is_file():
+        paths = [target]
+    else:
+        print(f"Error: {target} not found", file=sys.stderr)
+        return 1
+
+    surfaces = []
+    for i, p in enumerate(paths, 1):
+        if len(paths) > 1:
+            print(f"\r  [{i}/{len(paths)}] {p.name:<40}",
+                  end="", file=sys.stderr, flush=True)
+        surfaces.append(extract_ioctl_surface(str(p)))
+    if len(paths) > 1:
+        print(file=sys.stderr)
+
+    surfaces = [s for s in surfaces if s.ioctls or not args.hits_only]
 
     if args.json:
-        out = {
-            "filename": surface.filename,
-            "sha256": surface.sha256,
-            "method": surface.method,
-            "dispatcher_rva": hex(surface.dispatcher_rva) if surface.dispatcher_rva else None,
-            "ioctl_count": len(surface.ioctls),
-            "ioctls": [],
-            "errors": surface.errors,
-        }
-        for entry in surface.ioctls:
-            out["ioctls"].append({
-                "code": hex(entry.code),
-                "device_type": entry.ctl.device_type_name,
-                "function": entry.ctl.function,
-                "method": entry.ctl.method_name,
-                "access": entry.ctl.access_name,
-                "handler_rva": hex(entry.handler_rva),
-            })
-        print(json.dumps(out, indent=2))
+        out = []
+        for surface in surfaces:
+            entry = {
+                "filename": surface.filename,
+                "sha256": surface.sha256,
+                "method": surface.method,
+                "dispatcher_rva": hex(surface.dispatcher_rva) if surface.dispatcher_rva else None,
+                "ioctl_count": len(surface.ioctls),
+                "ioctls": [],
+                "errors": surface.errors,
+            }
+            for e in surface.ioctls:
+                entry["ioctls"].append({
+                    "code": hex(e.code),
+                    "device_type": e.ctl.device_type_name,
+                    "function": e.ctl.function,
+                    "method": e.ctl.method_name,
+                    "access": e.ctl.access_name,
+                    "handler_rva": hex(e.handler_rva),
+                    "handler_imports": e.handler_imports,
+                    "primitive_classes": e.primitive_classes,
+                })
+            out.append(entry)
+        text = json.dumps(out if len(out) != 1 else out[0], indent=2)
+        print(text)
+        if args.export:
+            Path(args.export).write_text(text)
+            print(f"\n  Exported to {args.export}", file=sys.stderr)
     else:
-        print(f"\n  {surface.filename}")
-        print(f"  SHA256: {surface.sha256}")
-        print(f"  Method: {surface.method}")
-        if surface.dispatcher_rva:
-            print(f"  Dispatcher RVA: {surface.dispatcher_rva:#x}")
-        print(f"  IOCTLs found: {len(surface.ioctls)}")
+        for surface in surfaces:
+            print(f"\n  {surface.filename}")
+            print(f"  SHA256: {surface.sha256}")
+            print(f"  Method: {surface.method}")
+            if surface.dispatcher_rva:
+                print(f"  Dispatcher RVA: {surface.dispatcher_rva:#x}")
+            print(f"  IOCTLs found: {len(surface.ioctls)}")
 
-        if surface.errors:
-            for e in surface.errors:
-                print(f"  ERROR: {e}")
+            if surface.errors:
+                for e in surface.errors:
+                    print(f"  ERROR: {e}")
 
-        if surface.ioctls:
-            print(f"\n  {'Code':<14} {'DevType':<24} {'Fn':>4} "
-                  f"{'Method':<18} {'Access'}")
-            print(f"  {'-'*14} {'-'*24} {'-'*4} {'-'*18} {'-'*30}")
+            if surface.ioctls:
+                print(f"\n  {'Code':<14} {'DevType':<24} {'Fn':>4} "
+                      f"{'Method':<18} {'Access':<28} Imports")
+                print(f"  {'-'*14} {'-'*24} {'-'*4} {'-'*18} {'-'*28} {'-'*30}")
 
-            for entry in surface.ioctls:
-                c = entry.ctl
-                print(f"  {entry.code:#010x}   {c.device_type_name:<24} "
-                      f"{c.function:>4} {c.method_name:<18} {c.access_name}")
+                for entry in surface.ioctls:
+                    c = entry.ctl
+                    imports = ", ".join(entry.handler_imports[:4]) if entry.handler_imports else ""
+                    if len(entry.handler_imports) > 4:
+                        imports += f" +{len(entry.handler_imports) - 4}"
+                    print(f"  {entry.code:#010x}   {c.device_type_name:<24} "
+                          f"{c.function:>4} {c.method_name:<18} {c.access_name:<28} {imports}")
 
     return 0
 
 
 def cmd_harvest(args):
-    """Download OEM tools and extract kernel drivers."""
     from .harvester import harvest
 
     summary = harvest(
@@ -213,7 +302,6 @@ def cmd_harvest(args):
 
 
 def cmd_regional(args):
-    """Search LOLDrivers by regional vendor."""
     from .regional import search_regional
 
     regions = args.region.split(",") if args.region else None
@@ -240,7 +328,6 @@ def cmd_regional(args):
 
 
 def cmd_wdm(args):
-    """Filter for WDM drivers with physmem primitives."""
     from .wdm_filter import scan_for_wdm_physmem
 
     results = scan_for_wdm_physmem(
@@ -278,12 +365,13 @@ Pipeline stages:
   wdm        Filter for WDM drivers with physmem primitives
 
 Examples:
-  driverscope scan C:\\drivers                    Scan a directory
-  driverscope scan driver.sys --lol --blocklist  Scan with cross-ref
-  driverscope hunt --deep                        Full system zero-day scan
-  driverscope ioctl driver.sys                   Extract IOCTLs
-  driverscope harvest ./output --scan            Download + scan OEM drivers
-  driverscope regional --region CN,KR            Regional vendor search
+  driverscope scan C:\\drivers --ioctl             Scan + extract IOCTLs
+  driverscope scan driver.sys --lol --blocklist   Scan with cross-ref
+  driverscope hunt --deep --export hits.json      Full system zero-day scan
+  driverscope ioctl C:\\drivers --hits-only         IOCTLs for a whole dir
+  driverscope ioctl driver.sys                    Extract IOCTLs (single file)
+  driverscope harvest ./output --scan             Download + scan OEM drivers
+  driverscope regional --region CN,KR             Regional vendor search
 """,
     )
     sub = parser.add_subparsers(dest="command", help="Pipeline stage")
@@ -300,7 +388,10 @@ Examples:
     p_scan.add_argument("--vt", action="store_true",
                         help="Look up hashes on VirusTotal")
     p_scan.add_argument("--vt-key", help="VirusTotal API key")
+    p_scan.add_argument("--ioctl", action="store_true",
+                        help="Also extract IOCTLs from flagged drivers")
     p_scan.add_argument("--json", action="store_true", help="JSON output")
+    p_scan.add_argument("--export", help="Export results to JSON file")
     p_scan.add_argument("--all", action="store_true",
                         help="Include clean drivers in output")
 
@@ -319,8 +410,13 @@ Examples:
 
     # -- ioctl --
     p_ioctl = sub.add_parser("ioctl", help="Extract IOCTL dispatch surface")
-    p_ioctl.add_argument("path", help=".sys file to analyze")
+    p_ioctl.add_argument("path", help=".sys file or directory to analyze")
+    p_ioctl.add_argument("--no-recursive", action="store_true",
+                         help="Don't recurse into subdirectories")
+    p_ioctl.add_argument("--hits-only", action="store_true",
+                         help="Only show drivers that have IOCTLs")
     p_ioctl.add_argument("--json", action="store_true", help="JSON output")
+    p_ioctl.add_argument("--export", help="Export results to JSON file")
 
     # -- harvest --
     p_harvest = sub.add_parser("harvest",

@@ -1,19 +1,10 @@
-"""Parse KDU's kdu.db (RMDX format) to extract driver binaries.
-
-KDU (Kernel Driver Utility) bundles 65+ vulnerable drivers in an XOR-encoded
-RMDX database. This module parses that database and extracts individual .sys
-files using Windows MSDelta decompression.
-"""
+"""Parse KDU's RMDX database and extract driver binaries."""
 
 import ctypes
 import ctypes.wintypes
 import struct
 import sys
 from pathlib import Path
-
-# ---------------------------------------------------------------------------
-# KDU resource ID -> driver filename mapping (from consts.h + tanikaze.h)
-# ---------------------------------------------------------------------------
 
 RESOURCE_MAP = {
     103: "NalDrv",
@@ -80,15 +71,10 @@ RESOURCE_MAP = {
 
 
 def _xor_decode(data: bytes, key: int) -> bytes:
-    """XOR-decode a buffer with a single-byte key."""
     return bytes(b ^ key for b in data)
 
 
 def _msdelta_decompress(data: bytes) -> bytes:
-    """Decompress MSDelta-compressed data using Windows API.
-
-    Requires Windows and msdelta.dll (ships with all Windows versions).
-    """
     if sys.platform != "win32":
         raise RuntimeError("MSDelta decompression requires Windows")
 
@@ -140,11 +126,6 @@ def _msdelta_decompress(data: bytes) -> bytes:
 
 
 def parse_rmdx(db_path: str, output_dir: str = None) -> list[dict]:
-    """Parse KDU's RMDX database and optionally extract drivers.
-
-    Returns list of dicts with driver info. If output_dir is set,
-    writes extracted .sys files there.
-    """
     data = Path(db_path).read_bytes()
 
     if data[:4] != b"RMDX":

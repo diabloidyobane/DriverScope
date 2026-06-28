@@ -1,16 +1,9 @@
-"""Zero-day hunter — find vulnerable signed drivers BEFORE they appear in public databases.
+"""Zero-day hunter — find novel vulnerable drivers not yet in any public database."""
 
-Scans local system directories and user-specified paths, runs import triage,
-filters out everything already documented (LOLDrivers, MS blocklist, KDU),
-and ranks remaining NOVEL candidates by exploitability.
-"""
-
-import argparse
 import json
 import os
 import sys
-import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -26,10 +19,6 @@ try:
 except ImportError:
     HAS_IOCTL = False
 
-
-# ---------------------------------------------------------------------------
-# Known-driver fingerprints (community-known, not necessarily in LOLDrivers)
-# ---------------------------------------------------------------------------
 
 KNOWN_KDU_NAMES = {
     "alsysio64.sys", "amdryzenmaster", "aoddriver.sys", "atszio.sys",
@@ -72,10 +61,6 @@ def is_known_kdu(filename: str) -> bool:
     }
 
 
-# ---------------------------------------------------------------------------
-# Novelty scoring
-# ---------------------------------------------------------------------------
-
 NOVELTY_WEIGHTS = {
     "PhysMem-Map": 30,
     "PhysMem-Section": 25,
@@ -109,7 +94,6 @@ class NovelCandidate:
 
 
 def compute_novelty(r: DriverResult) -> NovelCandidate:
-    """Score a driver by how interesting it is as a novel 0-day find."""
     candidate = NovelCandidate(result=r)
     score = 0
 
@@ -134,10 +118,6 @@ def compute_novelty(r: DriverResult) -> NovelCandidate:
     return candidate
 
 
-# ---------------------------------------------------------------------------
-# Scan paths
-# ---------------------------------------------------------------------------
-
 DEFAULT_SCAN_PATHS = [
     r"C:\Windows\System32\drivers",
 ]
@@ -150,7 +130,6 @@ DEEP_SCAN_PATHS = [
 
 
 def collect_sys_files(paths: list[str], recursive: bool = True) -> list[Path]:
-    """Collect all .sys files from given paths."""
     files = []
     for p in paths:
         root = Path(p)
@@ -169,13 +148,6 @@ def hunt(scan_paths: list[str] = None, deep: bool = False,
          lol_cache: str = None,
          blocklist_cache: str = None,
          min_score: int = 0) -> list[NovelCandidate]:
-    """Run the full zero-day hunting pipeline.
-
-    1. Collect .sys files from scan paths
-    2. Scan each for dangerous imports
-    3. Filter out MS inbox, known KDU, LOLDrivers, MS blocklist
-    4. Score remaining candidates by novelty
-    """
     if scan_paths is None:
         scan_paths = list(DEFAULT_SCAN_PATHS)
     if deep:
@@ -244,7 +216,6 @@ def hunt(scan_paths: list[str] = None, deep: bool = False,
 
 
 def format_results(candidates: list[NovelCandidate], json_output: bool = False) -> str:
-    """Format hunt results for display."""
     if json_output:
         out = []
         for c in candidates:

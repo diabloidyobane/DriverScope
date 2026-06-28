@@ -29,5 +29,8 @@ jobs:
       - name: Import check
         run: python -c "from driverscope import scanner, ioctl, hunter, harvester, regional, wdm_filter, kdu; print('All modules imported OK')"
 
+      - name: Run tests
+        run: pytest -v
+
       - name: CLI help
         run: driverscope --help

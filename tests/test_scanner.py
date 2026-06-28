@@ -1,5 +1,3 @@
-"""Basic tests for the scanner module."""
-
 import pytest
 from driverscope.scanner import (
     PRIMITIVE_CLASSES,
