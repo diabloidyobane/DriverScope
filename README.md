@@ -184,9 +184,17 @@ Claude Opus 4.6 handles long decompilation context well and is the default this 
 
 ### Hitting cyber safety blocks?
 
-If you're doing legitimate vulnerability research and Claude's safety filters trip on a prompt (kernel exploit chains, BYOVD primitives, etc.), apply for safeguard adjustment under Anthropic's **Cyber Verification Program**. From Anthropic:
+If you're doing legitimate vulnerability research and Claude's safety filters trip on a prompt (kernel exploit chains, BYOVD primitives, etc.), Anthropic has a **Cyber Verification Program** for safeguard adjustment:
 
 > If you are experiencing cyber blocks on what you believe to be a legitimate use case under our Usage Policy, fill out this form to apply for safeguards adjustment under our Cyber Verification Program. (Organizations on Zero Data Retention are not currently eligible — contact your Anthropic Sales Representative.)
+
+**Heads up — getting accepted is hard.** In practice, the program appears gated toward established orgs, vendors, and well-known names. Independent researchers (including ones with published CVEs to their name) have been turned down after multiple attempts. If you're in that bucket, your options are basically:
+
+- Apply anyway — it costs nothing and policy may change
+- Affiliate with a security org, vendor, or research lab that already has access
+- Work the parts that don't trip safety filters (static triage, primitive classification, IOCTL surface mapping — exactly what DriverScope does) and keep exploit-chain reasoning local or with a different toolchain
+
+This is being noted plainly so you don't burn a week assuming you'll get in.
 
 Either way: **DriverScope finds the surface, the model helps you decide what's real.**
 
