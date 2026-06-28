@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/hero.svg" alt="DriverScope — Find vulnerable drivers before attackers do." width="100%"/>
+</p>
+
 # DriverScope
 
 ![Status](https://img.shields.io/badge/Status-Active-4ade80?style=flat-square&labelColor=2d3748)

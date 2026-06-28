@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" role="img" aria-label="DriverScope - Automated BYOVD Hunting. Find vulnerable drivers before attackers do.">
+  <defs>
+    <style>
+      .label   { font: 600 16px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0ea5e9; letter-spacing: 3px; }
+      .head    { font: 700 64px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0f172a; }
+      .head-em { font: italic 700 64px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0ea5e9; }
+      .sub     { font: 400 18px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #475569; }
+      .meta    { font: 500 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; letter-spacing: 2px; }
+      @media (prefers-color-scheme: dark) {
+        .head { fill: #f1f5f9; }
+        .sub { fill: #94a3b8; }
+        .meta { fill: #64748b; }
+      }
+    </style>
+  </defs>
+
+  <!-- background (transparent — inherits GitHub theme) -->
+  <rect width="1200" height="400" fill="transparent"/>
+
+  <!-- top label -->
+  <text x="600" y="80" text-anchor="middle" class="label">AUTOMATED BYOVD HUNTING</text>
+
+  <!-- headline line 1 -->
+  <text x="600" y="170" text-anchor="middle" class="head">Find vulnerable drivers</text>
+
+  <!-- headline line 2 (with italic accent on 'attackers') -->
+  <text x="600" y="240" text-anchor="middle">
+    <tspan class="head">before </tspan><tspan class="head-em">attackers</tspan><tspan class="head"> do.</tspan>
+  </text>
+
+  <!-- subtitle -->
+  <text x="600" y="295" text-anchor="middle" class="sub">Python CLI that scans Windows kernel drivers for dangerous imports,</text>
+  <text x="600" y="320" text-anchor="middle" class="sub">extracts IOCTL dispatch surfaces, and surfaces novel zero-day candidates.</text>
+
+  <!-- meta -->
+  <text x="600" y="370" text-anchor="middle" class="meta">PYTHON 3.10+ &#183; WINDOWS &#183; MIT LICENSE</text>
+</svg>
