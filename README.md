@@ -221,7 +221,7 @@ driverscope emulate C:\drivers --json            # batch directory
 driverscope emulate a.sys b.sys c.sys --export results.json
 ```
 
-Real output from 5 drivers (0.8s total wall-clock):
+Real output from 4 drivers (0.6s total wall-clock):
 
 ```
   #  Driver                       Device                EPs Crash PDB                  Primitives
@@ -230,7 +230,6 @@ Real output from 5 drivers (0.8s total wall-clock):
   2  signeddrv.sys                                        5       Windows-Memory-Info  CrossProc-VA, KernelMem-Copy, PhysMem-Map
   3  RTCore64.sys                 RTCore64                5                            PhysMem-Map, PhysMem-Section
   4  PawnIO.sys                   PawnIO                 15     4 PawnIO_unsigned      MSR-RW, PCI-Config, PhysMem-Direct, VirtMem-RW +1
-  5  AsIO3_system.sys             Asusgio3                5       AsIO3_64.sys         PhysMem-Map, PhysMem-Section
 ```
 
 What emulation finds that static import scanning doesn't:
@@ -241,7 +240,7 @@ What emulation finds that static import scanning doesn't:
 - **PDB paths**: reveal original project names and build infrastructure (Jenkins CI paths, dev machine directories)
 - **Debug strings**: expose the full capability set in plain English (PawnIO's 37 named R/W operations, GlobalVistaVentures' VAD manipulation + page table walking)
 - **Device names**: signeddrv uses `\Device\WinNotify` and references `\Driver\MouClass` (mouse input interception), invisible to import-only analysis
-- **Runtime imports**: drivers that resolve APIs via `MmGetSystemRoutineAddress` instead of the import table (AsIO3 resolves `IoCreateDeviceSecure` this way)
+- **Runtime imports**: drivers that resolve APIs via `MmGetSystemRoutineAddress` instead of the import table (e.g. resolving `IoCreateDeviceSecure` at runtime instead of linking it)
 
 Emulation runs at ~100ms per driver. It complements the `scan` and `ioctl` subcommands: `scan` catches the import table, `ioctl` maps the dispatch surface, `emulate` reveals everything the developer left in the binary's strings and initialization path.
 

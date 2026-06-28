@@ -56,6 +56,45 @@ PRIMITIVE_KEYWORDS = [
 ]
 
 
+EXTRA_SYSTEM_MODULES = [
+    {
+        "name": "dxgkrnl",
+        "base_addr": "0xD8000000",
+        "path": "C:\\Windows\\system32\\drivers\\dxgkrnl.sys",
+    },
+]
+
+_fake_export_pages = {}
+
+
+def _rtlfindexportedroutinebyname_hook(emu, api_name, orig, argv):
+    """Stub for RtlFindExportedRoutineByName.
+
+    Speakeasy's decoy modules have empty export tables, so the real PE
+    walk returns NULL.  This hook allocates a persistent page per
+    (module_base, routine_name) pair and returns a stable address the
+    driver can store and call later.
+    """
+    module_base, name_ptr = argv
+    if not name_ptr:
+        return 0
+    try:
+        raw = bytes(emu.mem_read(name_ptr, 256))
+        name = raw.split(b'\x00', 1)[0].decode('ascii', errors='replace')
+    except Exception:
+        return 0
+    if not name:
+        return 0
+
+    key = (module_base, name)
+    if key not in _fake_export_pages:
+        page = emu.mem_map(0x1000, tag=f'emu.fake_export.{name}')
+        # write a RET so if the driver calls through it, emulation doesn't crash
+        emu.mem_write(page, b'\xC3')
+        _fake_export_pages[key] = page
+    return _fake_export_pages[key]
+
+
 def _iocreatedriver_hook(emu, api_name, orig, argv):
     """Generic stub for ntoskrnl.IoCreateDriver.
 
@@ -251,7 +290,18 @@ def emulate_driver(driver_path: str) -> EmulationResult:
     t0 = time.perf_counter()
 
     try:
-        se = speakeasy.Speakeasy()
+        config_path = os.path.join(os.path.dirname(speakeasy.__file__),
+                                   'configs', 'default.json')
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        sys_mods = config.get('modules', {}).get('system_modules', [])
+        existing = {m.get('name', '').lower() for m in sys_mods}
+        for extra in EXTRA_SYSTEM_MODULES:
+            if extra['name'].lower() not in existing:
+                sys_mods.append(extra)
+        config['modules']['system_modules'] = sys_mods
+
+        se = speakeasy.Speakeasy(config=config)
         module = se.load_module(driver_path)
 
         result.image_base = hex(module.get_base())
@@ -272,6 +322,9 @@ def emulate_driver(driver_path: str) -> EmulationResult:
         se.add_api_hook(_iocreatedriver_hook,
                         module='ntoskrnl',
                         api_name='IoCreateDriver', argc=2)
+        se.add_api_hook(_rtlfindexportedroutinebyname_hook,
+                        module='ntoskrnl',
+                        api_name='RtlFindExportedRoutineByName', argc=2)
         se.run_module(module, all_entrypoints=True)
     except Exception as e:
         result.error = f"{type(e).__name__}: {e}"
