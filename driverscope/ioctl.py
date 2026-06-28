@@ -282,7 +282,7 @@ def _find_dispatcher_capstone(pe: pefile.PE, entry_rva: int,
             lea_target.pop(dst, None)
             continue
 
-        # LEA reg, [rip+disp] — candidate handler address
+        # LEA reg, [rip+disp]: candidate handler address
         if (insn.mnemonic == "lea" and len(ops) == 2
                 and ops[0].type == OP_REG and ops[1].type == OP_MEM):
             mem = ops[1].mem
@@ -291,7 +291,7 @@ def _find_dispatcher_capstone(pe: pefile.PE, entry_rva: int,
                 alias.pop(ops[0].reg, None)
             continue
 
-        # mov [alias_of_rcx + 0xE0], reg — the dispatch store
+        # mov [alias_of_rcx + 0xE0], reg: the dispatch store
         if (insn.mnemonic == "mov" and len(ops) == 2
                 and ops[0].type == OP_MEM and ops[1].type == OP_REG):
             mem = ops[0].mem

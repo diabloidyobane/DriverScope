@@ -1,5 +1,5 @@
 """
-gen_comm_header.py — turn DriverScope --json output into a C comm header.
+gen_comm_header.py: turn DriverScope --json output into a C comm header.
 
 Usage:
     driverscope ioctl driver.sys --json > findings.json
@@ -34,7 +34,7 @@ def main() -> int:
         sha = s.get("sha256", "")
 
         print(f"/* Generated from {fname} ({method_via}, sha256={sha[:16]}...) */")
-        print(f"/* Set DEVICE_PATH yourself — DriverScope doesn't always recover it. */")
+        print(f"/* Set DEVICE_PATH yourself: DriverScope doesn't always recover it. */")
         print(f"#pragma once")
         print(f"#include <windows.h>")
         print(f"#include <winioctl.h>")

@@ -1,4 +1,4 @@
-"""Zero-day hunter — find novel vulnerable drivers not yet in any public database."""
+"""Zero-day hunter: find novel vulnerable drivers not yet in any public database."""
 
 import json
 import os
@@ -236,7 +236,7 @@ def format_results(candidates: list[NovelCandidate], json_output: bool = False) 
 
     lines = []
     lines.append(f"\n{'='*100}")
-    lines.append(f"  NOVEL DRIVER CANDIDATES — {len(candidates)} found")
+    lines.append(f"  NOVEL DRIVER CANDIDATES: {len(candidates)} found")
     lines.append(f"{'='*100}\n")
 
     if not candidates:
@@ -258,7 +258,7 @@ def format_results(candidates: list[NovelCandidate], json_output: bool = False) 
 
     # Detailed top 20
     lines.append(f"\n{'-'*100}")
-    lines.append(f"  TOP CANDIDATES — Detail")
+    lines.append(f"  TOP CANDIDATES: Detail")
     lines.append(f"{'-'*100}")
 
     for c in candidates[:20]:

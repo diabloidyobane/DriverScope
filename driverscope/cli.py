@@ -103,7 +103,7 @@ def cmd_scan(args):
         clean = len(results) - len(flagged)
 
         print(f"\n{'='*100}")
-        print(f"  SCAN RESULTS — {len(flagged)} flagged / {len(results)} total "
+        print(f"  SCAN RESULTS: {len(flagged)} flagged / {len(results)} total "
               f"({clean} clean)")
         print(f"{'='*100}\n")
 
@@ -146,7 +146,7 @@ def cmd_scan(args):
             if r.device_names:
                 print(f"    Devices: {', '.join(r.device_names[:3])}")
             if r.lol_known:
-                print(f"    [LOLDrivers] {r.lol_id} — {r.lol_category}")
+                print(f"    [LOLDrivers] {r.lol_id}: {r.lol_category}")
                 if r.lol_cves:
                     print(f"    CVEs: {', '.join(r.lol_cves)}")
             if r.ms_blocked:
@@ -314,7 +314,7 @@ def cmd_regional(args):
             if not entries:
                 continue
             print(f"\n{'='*80}")
-            print(f"  Region: {region} — {len(entries)} drivers")
+            print(f"  Region: {region} ({len(entries)} drivers)")
             print(f"{'='*80}")
             for e in entries[:30]:
                 classes = ", ".join(e["primitive_classes"]) or "none"
@@ -353,12 +353,12 @@ def cmd_wdm(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="driverscope",
-        description="DriverScope — Automated BYOVD hunting pipeline",
+        description="DriverScope: Automated BYOVD hunting pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Pipeline stages:
   scan       Scan .sys files for dangerous kernel imports
-  hunt       Zero-day hunter — find novel vulnerable drivers
+  hunt       Zero-day hunter: find novel vulnerable drivers
   ioctl      Extract IOCTL dispatch surface from a driver
   harvest    Download OEM tools and extract kernel drivers
   regional   Search LOLDrivers by regional vendor (CN/KR/JP/TW/RU)

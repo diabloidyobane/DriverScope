@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hero.svg" alt="DriverScope — Find vulnerable drivers before attackers do." width="100%"/>
+  <img src="assets/hero.svg" alt="DriverScope: Find vulnerable drivers before attackers do." width="100%"/>
 </p>
 
 # DriverScope
@@ -48,7 +48,7 @@ Actual output from `C:\Windows\System32\drivers` on a Windows 11 host:
 ```
 $ driverscope scan C:\Windows\System32\drivers
 
-  SCAN RESULTS — 423 flagged / 463 total (40 clean)
+  SCAN RESULTS: 423 flagged / 463 total (40 clean)
 
   dxgkrnl.sys       14  x64  YES  PhysMem-Map, MSR, PCI-Config, Token-Priv +10
   cldflt.sys        10  x64       CrossProc-Attach, PhysMem-Map, Process-Lookup +7
@@ -69,10 +69,10 @@ $ driverscope ioctl bam.sys
   IOCTLs found: 2
 
   0x00000004 METHOD_BUFFERED
-    → IoThreadToProcess
+    -> IoThreadToProcess
   0x00000003 METHOD_NEITHER
-    → ExAcquirePushLockExclusiveEx
-    → KeEnterCriticalRegion
+    -> ExAcquirePushLockExclusiveEx
+    -> KeEnterCriticalRegion
 ```
 
 ```
@@ -168,21 +168,21 @@ Cached locally (30-day TTL), auto-throttles to free tier.
 
 ## Modules
 
-- `scanner.py` — PE import scanner, VT/LOLDrivers/Blocklist integration
-- `ioctl.py` — static IOCTL dispatch extraction (Capstone + bytescan)
-- `hunter.py` — zero-day pipeline with novelty scoring
-- `harvester.py` — OEM tool downloader + .sys extractor
-- `regional.py` — regional vendor search (CN/KR/JP/TW/RU)
-- `wdm_filter.py` — WDM vs KMDF filter
-- `kdu.py` — KDU RMDX database parser
+- `scanner.py`: PE import scanner, VT/LOLDrivers/Blocklist integration
+- `ioctl.py`: static IOCTL dispatch extraction (Capstone + bytescan)
+- `hunter.py`: zero-day pipeline with novelty scoring
+- `harvester.py`: OEM tool downloader + .sys extractor
+- `regional.py`: regional vendor search (CN/KR/JP/TW/RU)
+- `wdm_filter.py`: WDM vs KMDF filter
+- `kdu.py`: KDU RMDX database parser
 
 ## Recommended: pair with Claude for triage
 
 DriverScope surfaces candidates but doesn't reason about them. A useful workflow is to dump the JSON output (`--json` on any subcommand) along with the relevant decompilation, and ask **Claude Opus 4.6** (or any equivalent reasoning model) to triage:
 
-- *"Does this IOCTL actually expose a write-what-where, or is it gated by a check I'm missing?"*
-- *"Compare these handler imports to known LOLDrivers patterns — is this technique novel?"*
-- *"What's the realistic exploit chain if I can call IOCTL `0xfffc4e94` on `acpi.sys`?"*
+- *"Does this IOCTL expose a write-what-where, or is it gated by a check I'm missing?"*
+- *"Compare these handler imports to known LOLDrivers patterns. Is this technique novel?"*
+- *"What's the exploit chain if I can call IOCTL `0xfffc4e94` on `acpi.sys`?"*
 
 Claude Opus 4.6 handles long decompilation context well and is the default this was tested with.
 
@@ -190,25 +190,25 @@ Claude Opus 4.6 handles long decompilation context well and is the default this 
 
 If you're doing legitimate vulnerability research and Claude's safety filters trip on a prompt (kernel exploit chains, BYOVD primitives, etc.), Anthropic has a **Cyber Verification Program** for safeguard adjustment:
 
-> If you are experiencing cyber blocks on what you believe to be a legitimate use case under our Usage Policy, fill out this form to apply for safeguards adjustment under our Cyber Verification Program. (Organizations on Zero Data Retention are not currently eligible — contact your Anthropic Sales Representative.)
+> If you are experiencing cyber blocks on what you believe to be a legitimate use case under our Usage Policy, fill out this form to apply for safeguards adjustment under our Cyber Verification Program. (Organizations on Zero Data Retention are not currently eligible. Contact your Anthropic Sales Representative.)
 
-**Heads up — getting accepted is hard.** In practice, the program appears gated toward established orgs, vendors, and well-known names. Independent researchers (including ones with published CVEs to their name) have been turned down after multiple attempts. If you're in that bucket, your options are basically:
+**Getting accepted is hard.** In practice, the program is gated toward established orgs, vendors, and well-known names. Independent researchers (including ones with published CVEs) have been turned down after multiple attempts. If you're in that bucket, your options:
 
-- Apply anyway — it costs nothing and policy may change
-- Affiliate with a security org, vendor, or research lab that already has access
-- Work the parts that don't trip safety filters (static triage, primitive classification, IOCTL surface mapping — exactly what DriverScope does) and keep exploit-chain reasoning local or with a different toolchain
+- Apply anyway. It costs nothing and policy may change.
+- Affiliate with a security org, vendor, or research lab that already has access.
+- Work the parts that don't trip safety filters (static triage, primitive classification, IOCTL surface mapping). Keep exploit-chain reasoning local or with a different toolchain.
 
-This is being noted plainly so you don't burn a week assuming you'll get in.
+Noted up front so you don't burn a week assuming access.
 
 Either way: **DriverScope finds the surface, the model helps you decide what's real.**
 
 ## Building a comm header to test findings
 
-Once DriverScope hands you a list of IOCTL codes, you still need to actually call them from user-mode to confirm they reach a primitive. The pattern here is the same one used in commercial driver SDKs and security-research test rigs:
+Once DriverScope hands you a list of IOCTL codes, you still need to call them from user-mode to confirm they reach a primitive. The pattern here matches commercial driver SDKs and security-research test rigs:
 
 - **One C++ header per target driver** (`*_comm.h`)
-- **`CTL_CODE(...)` macro per IOCTL** — self-documenting, not raw hex
-- **One `struct` per IOCTL's input layout** — close to the call site so when you discover the layout is actually `{phys, size, virt}` instead of `{addr, len, _}` you change it in exactly one place
+- **`CTL_CODE(...)` macro per IOCTL** for self-documenting code, not raw hex
+- **One `struct` per IOCTL's input layout**, close to the call site. When you discover the layout is `{phys, size, virt}` instead of `{addr, len, _}`, you change it in one place.
 - **A wrapper class** with RAII handle cleanup and one typed method per IOCTL
 - **A generic `Invoke()`** for sweeping unknown codes
 
@@ -228,8 +228,8 @@ g++ examples/ioctl_tester.cpp -o ioctl_tester.exe -lstdc++ -static   # MinGW
 
 Then edit `driver_comm.h` to fill in the parts DriverScope can't guess:
 
-- **`DEVICE_PATH`** — DriverScope reports `device_names` when it can recover them. For stripped or runtime-created devices, look it up with WinObj, `objdir`, or by reading `IoCreateSymbolicLink` in IDA.
-- **Per-IOCTL request structs** — DriverScope tells you which kernel APIs each handler imports (`MmMapIoSpace`, `READ_PORT_UCHAR`, etc.) so you know what *kind* of primitive it is, but the exact struct the handler reads from the input buffer is on you to reverse. Common shapes for reference:
+- **`DEVICE_PATH`**: DriverScope reports `device_names` when it can recover them. For stripped or runtime-created devices, look it up with WinObj, `objdir`, or by reading `IoCreateSymbolicLink` in IDA.
+- **Per-IOCTL request structs**: DriverScope tells you which kernel APIs each handler imports (`MmMapIoSpace`, `READ_PORT_UCHAR`, etc.) so you know what *kind* of primitive it is. The exact struct the handler reads from the input buffer is on you to reverse. Common shapes for reference:
 
 | Primitive | Typical input struct |
 |---|---|
@@ -244,27 +244,27 @@ Then edit `driver_comm.h` to fill in the parts DriverScope can't guess:
 
 | File | What it is |
 |---|---|
-| [`examples/comm_template.h`](examples/comm_template.h) | C++ header pattern: per-IOCTL structs + `ExampleDriver` class with `Open()`, typed primitive wrappers (`ReadPhysical`, `ReadMsr`, `Probe`), generic `Invoke()` |
-| [`examples/ioctl_tester.cpp`](examples/ioctl_tester.cpp) | Three modes — *structured sweep* (validate each typed primitive with known-good inputs like BIOS shadow + EFER read), *raw sweep* (try N codes from a base), *single call* |
+| [`examples/comm_template.h`](examples/comm_template.h) | C++ header pattern: per-IOCTL structs plus `ExampleDriver` class with `Open()`, typed primitive wrappers (`ReadPhysical`, `ReadMsr`, `Probe`), generic `Invoke()` |
+| [`examples/ioctl_tester.cpp`](examples/ioctl_tester.cpp) | Three modes: *structured sweep* (validate each typed primitive against known-good inputs like BIOS shadow + EFER read), *raw sweep* (try N codes from a base), *single call* |
 | [`examples/gen_comm_header.py`](examples/gen_comm_header.py) | Generates `CTL_CODE` macros from `driverscope ioctl --json` output |
 
 ### How the validators work
 
-The structured sweep in `ioctl_tester.cpp` shows the pattern for confirming a primitive really exists rather than just that the IOCTL code is *defined*:
+The structured sweep in `ioctl_tester.cpp` shows the pattern for confirming a primitive exists rather than just that the IOCTL code is *defined*:
 
-- **PhysMem-Map** — ask the handler to copy out bytes from `0x000F0000` (the BIOS shadow region). On most hardware that's reliably readable, so if you get non-zero bytes back, the handler genuinely walked physical memory.
-- **MSR** — read EFER (`0xC0000080`) and check that bit 11 (NXE) is set. NXE has been on since XP SP2, so a zero return means either the handler didn't actually `rdmsr` or it's lying to you.
-- **Probe** — send a magic cookie and check the handler echoes back a status field. Confirms the handler reaches `IoCompleteRequest` with your buffer.
+- **PhysMem-Map**: ask the handler to copy out bytes from `0x000F0000` (BIOS shadow region). On most hardware that's readable, so non-zero bytes returned means the handler walked physical memory.
+- **MSR**: read EFER (`0xC0000080`) and check that bit 11 (NXE) is set. NXE has been on since XP SP2, so a zero return means the handler either didn't `rdmsr` or is lying.
+- **Probe**: send a magic cookie and check the handler echoes back a status field. Confirms the handler reaches `IoCompleteRequest` with your buffer.
 
-Add one of these per primitive class you find. The point is to distinguish "IOCTL code is wired" from "IOCTL code reaches a real primitive" — easy to confuse in static analysis alone.
+Add one of these per primitive class you find. The point: distinguish "IOCTL code is wired" from "IOCTL code reaches a real primitive". Easy to confuse in static analysis alone.
 
 ### Safety
 
-Every `DeviceIoControl` call hits ring 0. A bad struct layout against a physmem or MSR driver will BSOD instantly. **Test in a VM with a snapshot you can roll back**, never on a host you care about.
+Every `DeviceIoControl` call hits ring 0. A bad struct layout against a physmem or MSR driver will BSOD the host. **Test in a VM with a snapshot you can roll back**, never on a host you care about.
 
 ## Deeper IOCTL analysis with IDA
 
-DriverScope's static IOCTL extractor handles most drivers, but complex dispatchers (deeply nested, obfuscated, or virtualized) benefit from IDA Pro's full analysis. Use [re-mcp-ida](https://github.com/mrexodia/ida-pro-mcp) in headless mode:
+DriverScope's static IOCTL extractor handles most drivers. Complex dispatchers (deeply nested, obfuscated, or virtualized) benefit from IDA Pro's full analysis. Use [re-mcp-ida](https://github.com/mrexodia/ida-pro-mcp) in headless mode:
 
 ```bash
 # start IDA headless with the MCP plugin on a driver
@@ -297,7 +297,7 @@ If DriverScope saved you time or surfaced a useful finding, you can support deve
 
 ## Credits
 
-- [@jsacco](https://github.com/jsacco) — [DriverBuddy Revolutions](https://github.com/jsacco/driverbuddyrevolutions), which informed parts of the IOCTL/dispatcher detection approach
+- [@jsacco](https://github.com/jsacco): [DriverBuddy Revolutions](https://github.com/jsacco/driverbuddyrevolutions), which informed parts of the IOCTL/dispatcher detection approach
 
 ## License
 

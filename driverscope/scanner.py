@@ -1,4 +1,4 @@
-"""PE import scanner — classify kernel drivers by dangerous import primitives."""
+"""PE import scanner: classify kernel drivers by dangerous import primitives."""
 
 import base64
 import hashlib

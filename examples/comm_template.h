@@ -1,5 +1,5 @@
 /*
- * comm_template.h — researcher-grade C++ wrapper for validating IOCTL findings.
+ * comm_template.h: researcher-grade C++ wrapper for validating IOCTL findings.
  *
  * This is the shape you build around a vulnerable driver once DriverScope
  * gives you a list of IOCTL codes. The class-per-driver + struct-per-IOCTL
@@ -28,7 +28,7 @@
  *
  * From DriverScope's `device_names` (or recovered manually via WinObj /
  * objdir / reverse-engineering IoCreateSymbolicLink in the .sys).
- * Examples (illustrative — fill in for your target):
+ * Examples (illustrative: fill in for your target):
  *     "\\\\.\\ExampleDrv"
  *     "\\\\.\\PhyMem"
  *     "\\\\Global??\\\\MyDriver"
@@ -37,7 +37,7 @@
 
 /* ===== IOCTL codes =====
  *
- * Use CTL_CODE() rather than raw hex — it's self-documenting and lets you
+ * Use CTL_CODE() rather than raw hex: it's self-documenting and lets you
  * see at a glance what method + access the handler expects.
  *
  * (These are placeholders. Replace with codes from your --json findings.)
@@ -49,25 +49,25 @@
 /* ===== per-IOCTL request structs =====
  *
  * Reverse-engineered from the handler. The handler's first move on entry
- * is usually `mov rcx, [Irp+0xB8] ; mov rdx, [IrpSp+0x10]` — that's your
+ * is usually `mov rcx, [Irp+0xB8] ; mov rdx, [IrpSp+0x10]`: that's your
  * input pointer + length. Walk forward to see what offsets it reads.
  */
 #pragma pack(push, 1)
 
 struct ProbeRequest {
-    uint32_t cookie;       /* IN  — magic the handler validates */
+    uint32_t cookie;       /* IN : magic the handler validates */
     uint32_t status;       /* OUT */
 };
 
 struct PhysReadRequest {
-    uint64_t physical_addr;   /* IN  — physical address to map */
-    uint32_t size;            /* IN  — bytes to copy */
+    uint64_t physical_addr;   /* IN : physical address to map */
+    uint32_t size;            /* IN : bytes to copy */
     uint32_t _pad;
-    uint8_t  out_buffer[256]; /* OUT — copied bytes (cap whatever the handler does) */
+    uint8_t  out_buffer[256]; /* OUT: copied bytes (cap whatever the handler does) */
 };
 
 struct MsrReadRequest {
-    uint32_t msr_index;       /* IN  — e.g. 0xC0000080 for EFER */
+    uint32_t msr_index;       /* IN : e.g. 0xC0000080 for EFER */
     uint32_t _pad;
     uint64_t value;           /* OUT */
 };
@@ -105,7 +105,7 @@ public:
 
     bool IsOpen() const { return handle_ != INVALID_HANDLE_VALUE; }
 
-    /* Generic IOCTL invoker — useful for sweeping unknown codes. */
+    /* Generic IOCTL invoker: useful for sweeping unknown codes. */
     bool Invoke(DWORD code, void* in_buf, DWORD in_sz,
                               void* out_buf, DWORD out_sz, DWORD* returned = nullptr) {
         DWORD bytes = 0;
@@ -118,7 +118,7 @@ public:
         return ok != FALSE;
     }
 
-    /* Per-IOCTL typed wrappers — confirms the handler accepts your struct. */
+    /* Per-IOCTL typed wrappers: confirms the handler accepts your struct. */
 
     bool Probe(uint32_t cookie, uint32_t* status_out = nullptr) {
         ProbeRequest req{ cookie, 0 };

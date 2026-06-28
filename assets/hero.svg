@@ -14,7 +14,7 @@
     </style>
   </defs>
 
-  <!-- background (transparent — inherits GitHub theme) -->
+  <!-- background (transparent: inherits GitHub theme) -->
   <rect width="1200" height="400" fill="transparent"/>
 
   <!-- top label -->

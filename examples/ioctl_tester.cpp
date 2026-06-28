@@ -1,5 +1,5 @@
 /*
- * ioctl_tester.cpp — minimal validator for a DriverScope-found surface.
+ * ioctl_tester.cpp: minimal validator for a DriverScope-found surface.
  *
  * Build (MSVC):
  *     cl /EHsc ioctl_tester.cpp
@@ -35,13 +35,13 @@ static void print_result(const char* label, bool ok, DWORD err = 0) {
 static int structured_sweep(ExampleDriver& drv) {
     printf("[*] Structured validation sweep\n");
 
-    /* 1. Probe — does the handler respond at all? */
+    /* 1. Probe: does the handler respond at all? */
     uint32_t status = 0;
     bool ok = drv.Probe(0xDEADBEEF, &status);
     printf("  probe status=0x%08X\n", status);
     print_result("Probe()", ok);
 
-    /* 2. PhysMem-Map primitive — read 16 bytes from the BIOS shadow area.
+    /* 2. PhysMem-Map primitive: read 16 bytes from the BIOS shadow area.
           On a real BIOS-shadowing system this is reliably readable. */
     uint8_t bios[16] = {0};
     ok = drv.ReadPhysical(0x000F0000, bios, sizeof(bios));
@@ -49,7 +49,7 @@ static int structured_sweep(ExampleDriver& drv) {
            bios[0], bios[1], bios[2], bios[3], bios[4], bios[5], bios[6], bios[7]);
     print_result("ReadPhysical(0xF0000)", ok);
 
-    /* 3. MSR primitive — read EFER. NXE bit (bit 11) should be set on
+    /* 3. MSR primitive: read EFER. NXE bit (bit 11) should be set on
           any post-XP-SP2 system. */
     uint64_t efer = 0;
     ok = drv.ReadMsr(0xC0000080, &efer);
