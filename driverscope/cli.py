@@ -350,6 +350,100 @@ def cmd_wdm(args):
     return 0
 
 
+def cmd_bulk(args):
+    from .bulk_scrape import bulk_scrape, list_vendors, HAS_PLAYWRIGHT
+
+    if args.list:
+        targets = list_vendors()
+        print(f"\n  {len(targets)} vendor targets:\n")
+        print(f"  {'Name':<22} {'Category':<14} {'Region':<8} Notes")
+        print(f"  {'-'*22} {'-'*14} {'-'*8} {'-'*40}")
+        for t in targets:
+            print(f"  {t.name:<22} {t.category:<14} {t.region:<8} {t.notes}")
+        return 0
+
+    if not HAS_PLAYWRIGHT:
+        print("Error: pip install driverscope[bulk]  (playwright + httpx)",
+              file=sys.stderr)
+        print("Then: playwright install chromium", file=sys.stderr)
+        return 1
+
+    vendors = args.vendors.split(",") if args.vendors else None
+    print(f"  Scraping vendor portals into {args.output}/", file=sys.stderr)
+    results = bulk_scrape(
+        vendors=vendors,
+        category=args.category,
+        region=args.region,
+        output_dir=args.output,
+        max_pages_per_vendor=args.max_pages,
+        concurrency=args.concurrency,
+    )
+
+    total_dl = sum(len(r.saved_files) for r in results)
+    total_urls = sum(len(r.download_urls) for r in results)
+    total_errs = sum(len(r.errors) for r in results)
+    print(f"\n  {len(results)} vendors scraped")
+    print(f"  {total_urls} download URLs found")
+    print(f"  {total_dl} files saved")
+    if total_errs:
+        print(f"  {total_errs} errors (see per-vendor reports)")
+
+    print(f"\n  Per-vendor breakdown:")
+    for r in results:
+        print(f"    {r.vendor:<22}  urls={len(r.download_urls):>4}  "
+              f"saved={len(r.saved_files):>4}  errs={len(r.errors)}")
+
+    if args.scan:
+        from .scanner import scan_directory
+        print(f"\n  Scanning harvested .sys files...", file=sys.stderr)
+        scan_results = scan_directory(args.output, recursive=True)
+        flagged = [s for s in scan_results if s.flagged_imports]
+        print(f"  {len(flagged)} / {len(scan_results)} flagged "
+              f"({len(flagged) * 100 // max(1, len(scan_results))}%)")
+
+    return 0
+
+
+def cmd_triage(args):
+    from .triage import (
+        triage_findings, load_findings, format_report, HAS_ANTHROPIC
+    )
+    from dataclasses import asdict
+
+    if not HAS_ANTHROPIC:
+        print("Error: pip install driverscope[triage]  (anthropic)",
+              file=sys.stderr)
+        return 1
+
+    findings = load_findings(args.findings)
+    if not findings:
+        print("No findings to triage.", file=sys.stderr)
+        return 1
+
+    print(f"  Triaging {len(findings)} findings via {args.model}...",
+          file=sys.stderr)
+    results = triage_findings(
+        findings,
+        api_key=args.api_key,
+        model=args.model,
+        concurrency=args.concurrency,
+        max_tokens=args.max_tokens,
+    )
+
+    if args.json:
+        out = json.dumps([asdict(r) for r in results], indent=2)
+    else:
+        out = format_report(results)
+
+    if args.output:
+        Path(args.output).write_text(out)
+        print(f"  Report written to {args.output}", file=sys.stderr)
+    else:
+        print(out)
+
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="driverscope",
@@ -363,15 +457,18 @@ Pipeline stages:
   harvest    Download OEM tools and extract kernel drivers
   regional   Search LOLDrivers by regional vendor (CN/KR/JP/TW/RU)
   wdm        Filter for WDM drivers with physmem primitives
+  bulk       Bulk-scrape vendor portals via Playwright
+  triage     Bulk Claude API triage of scan/ioctl findings
 
 Examples:
-  driverscope scan C:\\drivers --ioctl             Scan + extract IOCTLs
-  driverscope scan driver.sys --lol --blocklist   Scan with cross-ref
+  driverscope scan C:\\drivers --ioctl --json --export findings.json
   driverscope hunt --deep --export hits.json      Full system zero-day scan
-  driverscope ioctl C:\\drivers --hits-only         IOCTLs for a whole dir
   driverscope ioctl driver.sys                    Extract IOCTLs (single file)
   driverscope harvest ./output --scan             Download + scan OEM drivers
   driverscope regional --region CN,KR             Regional vendor search
+  driverscope bulk --list                         List vendor portals
+  driverscope bulk --vendors MSI-Support,ASRock-Support --scan
+  driverscope triage findings.json --output triage.md
 """,
     )
     sub = parser.add_subparsers(dest="command", help="Pipeline stage")
@@ -442,6 +539,39 @@ Examples:
     p_wdm.add_argument("--no-recursive", action="store_true")
     p_wdm.add_argument("--json", action="store_true", help="JSON output")
 
+    # -- bulk --
+    p_bulk = sub.add_parser("bulk",
+                            help="Bulk-scrape vendor portals via Playwright")
+    p_bulk.add_argument("--output", default="./bulk_harvest",
+                        help="Output directory")
+    p_bulk.add_argument("--vendors",
+                        help="Comma-separated vendor names (default: all). "
+                             "Use --list to see available")
+    p_bulk.add_argument("--category",
+                        help="Filter by category (motherboard,chipset,audio,...)")
+    p_bulk.add_argument("--region", help="Filter by region")
+    p_bulk.add_argument("--max-pages", type=int, default=5,
+                        help="Max pages per vendor (default: 5)")
+    p_bulk.add_argument("--concurrency", type=int, default=4)
+    p_bulk.add_argument("--list", action="store_true",
+                        help="List available vendor targets and exit")
+    p_bulk.add_argument("--scan", action="store_true",
+                        help="Scan harvested .sys files after download")
+
+    # -- triage --
+    p_triage = sub.add_parser("triage",
+                              help="Bulk Claude API triage of scan/ioctl findings")
+    p_triage.add_argument("findings", help="JSON file from scan/ioctl --json")
+    p_triage.add_argument("--api-key",
+                          help="Anthropic API key (or ANTHROPIC_API_KEY env)")
+    p_triage.add_argument("--model", default="claude-opus-4-6",
+                          help="Claude model (default: claude-opus-4-6)")
+    p_triage.add_argument("--concurrency", type=int, default=4)
+    p_triage.add_argument("--max-tokens", type=int, default=1024)
+    p_triage.add_argument("--output", help="Write Markdown report to file")
+    p_triage.add_argument("--json", action="store_true",
+                          help="JSON output instead of Markdown")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -454,6 +584,8 @@ Examples:
         "harvest": cmd_harvest,
         "regional": cmd_regional,
         "wdm": cmd_wdm,
+        "bulk": cmd_bulk,
+        "triage": cmd_triage,
     }
 
     return commands[args.command](args)

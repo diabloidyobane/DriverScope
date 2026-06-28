@@ -128,6 +128,8 @@ Every flagged import maps to a kernel primitive that BYOVD attacks exploit:
 | `harvest` | Download OEM tools and extract embedded drivers |
 | `regional` | Search LOLDrivers by regional vendor (CN/KR/JP/TW/RU) |
 | `wdm` | Filter for WDM drivers with physmem primitives |
+| `bulk` | Bulk-scrape vendor download portals via Playwright |
+| `triage` | Bulk Claude API triage of scan/ioctl findings |
 
 ### All options
 
@@ -145,6 +147,45 @@ driverscope harvest --output ./harvested --scan  # download OEM tools, extract +
 driverscope regional --region CN,JP              # LOLDrivers by vendor region
 driverscope wdm C:\drivers                       # WDM-only physmem filter
 ```
+
+### Bulk vendor scraping
+
+The `bulk` subcommand uses Playwright to scrape vendor download portals at scale: MSI, ASRock, Gigabyte, Asus, Realtek, Intel, Station-Drivers, MS Update Catalog. Use it to build a corpus of vendor-signed drivers outside what's already in LOLDrivers.
+
+```bash
+pip install driverscope[bulk]
+playwright install chromium
+
+driverscope bulk --list                                  # see vendor targets
+driverscope bulk --vendors MSI-Support,ASRock-Support    # scrape specific vendors
+driverscope bulk --category motherboard --scan           # all motherboard vendors + scan
+driverscope bulk --output ./corpus --max-pages 10        # deep crawl
+```
+
+Output goes to `<output>/<vendor>/<file>`. Each vendor runs in parallel under a concurrency cap. Downloads cap at 200MB per file and skip files that already exist on disk (idempotent re-runs).
+
+### Bulk Claude triage
+
+After scan/ioctl extraction, pipe the JSON output through `triage` to get per-IOCTL verdicts from Claude:
+
+```bash
+pip install driverscope[triage]
+export ANTHROPIC_API_KEY=sk-ant-...
+
+driverscope scan ./corpus --ioctl --json --export findings.json
+driverscope triage findings.json --output triage.md
+```
+
+Each finding produces:
+
+```
+IOCTL 0x80102040  CONFIRMED-PRIMITIVE  MmMapIoSpace exposed with no caller check
+IOCTL 0x80102044  LIKELY-PRIMITIVE     PhysMem write reachable; bounds check is weak
+IOCTL 0x80102048  GATED                Guarded by process-name allowlist
+OVERALL: CONFIRMED-PRIMITIVE  Driver exposes arbitrary physical R/W via two IOCTLs
+```
+
+Triage runs concurrently (default 4 in flight). Use `--concurrency 8` if you have API capacity. Default model: `claude-opus-4-6`.
 
 ### VirusTotal
 
