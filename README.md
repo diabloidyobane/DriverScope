@@ -198,6 +198,45 @@ This is being noted plainly so you don't burn a week assuming you'll get in.
 
 Either way: **DriverScope finds the surface, the model helps you decide what's real.**
 
+## Building a comm header to test findings
+
+Once DriverScope hands you a list of IOCTL codes, you still need to actually call them from user-mode to confirm they reach a vulnerable code path. The typical workflow is a small C header (`*_comm.h`) full of `CTL_CODE(...)` macros plus a minimal tester binary.
+
+### Auto-generate from JSON
+
+```bash
+# 1. dump IOCTL surface
+driverscope ioctl driver.sys --json > findings.json
+
+# 2. generate the header
+python examples/gen_comm_header.py findings.json > driver_comm.h
+
+# 3. compile the tester against it
+cl examples/ioctl_tester.c     # MSVC
+# or
+gcc examples/ioctl_tester.c -o ioctl_tester.exe
+```
+
+Edit `driver_comm.h` afterwards to fill in:
+
+- `DEVICE_PATH` — DriverScope reports `device_names` when it can recover them, but for stripped or runtime-created devices you'll need to look it up yourself (WinObj, `objdir`, or by reverse-engineering `IoCreateSymbolicLink`).
+- **Input/output struct layouts** — DriverScope tells you what kernel APIs each handler imports (`MmMapIoSpace`, `READ_PORT_UCHAR`, etc.) but the actual struct the handler reads is on you to reverse. Typical shapes:
+  - PhysMem mappers: `{ uint64 phys_addr; uint32 size; uint64 mapped_out; }`
+  - I/O-port drivers: `{ uint16 port; uint8 value; }`
+  - MSR access: `{ uint32 msr_index; uint64 value; }`
+
+### Templates
+
+| File | What it is |
+|---|---|
+| [`examples/comm_template.h`](examples/comm_template.h) | C header template with placeholders and pattern notes |
+| [`examples/ioctl_tester.c`](examples/ioctl_tester.c) | Minimal user-mode tester — sweep mode or single-IOCTL mode |
+| [`examples/gen_comm_header.py`](examples/gen_comm_header.py) | Generates a header from `driverscope ioctl --json` output |
+
+### Safety
+
+Every `DeviceIoControl` call hits ring 0. A bad struct layout against a physmem driver will BSOD the box instantly. **Test in a VM with a snapshot you can roll back**, and don't run sweeps against drivers loaded on a host you care about.
+
 ## Deeper IOCTL analysis with IDA
 
 DriverScope's static IOCTL extractor handles most drivers, but complex dispatchers (deeply nested, obfuscated, or virtualized) benefit from IDA Pro's full analysis. Use [re-mcp-ida](https://github.com/mrexodia/ida-pro-mcp) in headless mode:
