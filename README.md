@@ -200,42 +200,63 @@ Either way: **DriverScope finds the surface, the model helps you decide what's r
 
 ## Building a comm header to test findings
 
-Once DriverScope hands you a list of IOCTL codes, you still need to actually call them from user-mode to confirm they reach a vulnerable code path. The typical workflow is a small C header (`*_comm.h`) full of `CTL_CODE(...)` macros plus a minimal tester binary.
+Once DriverScope hands you a list of IOCTL codes, you still need to actually call them from user-mode to confirm they reach a primitive. The pattern here is the same one used in commercial driver SDKs and security-research test rigs:
 
-### Auto-generate from JSON
+- **One C++ header per target driver** (`*_comm.h`)
+- **`CTL_CODE(...)` macro per IOCTL** — self-documenting, not raw hex
+- **One `struct` per IOCTL's input layout** — close to the call site so when you discover the layout is actually `{phys, size, virt}` instead of `{addr, len, _}` you change it in exactly one place
+- **A wrapper class** with RAII handle cleanup and one typed method per IOCTL
+- **A generic `Invoke()`** for sweeping unknown codes
+
+### Workflow
 
 ```bash
 # 1. dump IOCTL surface
 driverscope ioctl driver.sys --json > findings.json
 
-# 2. generate the header
+# 2. seed the CTL_CODE macros from JSON
 python examples/gen_comm_header.py findings.json > driver_comm.h
 
-# 3. compile the tester against it
-cl examples/ioctl_tester.c     # MSVC
-# or
-gcc examples/ioctl_tester.c -o ioctl_tester.exe
+# 3. build the tester against your filled-in header
+cl /EHsc examples/ioctl_tester.cpp        # MSVC
+g++ examples/ioctl_tester.cpp -o ioctl_tester.exe -lstdc++ -static   # MinGW
 ```
 
-Edit `driver_comm.h` afterwards to fill in:
+Then edit `driver_comm.h` to fill in the parts DriverScope can't guess:
 
-- `DEVICE_PATH` — DriverScope reports `device_names` when it can recover them, but for stripped or runtime-created devices you'll need to look it up yourself (WinObj, `objdir`, or by reverse-engineering `IoCreateSymbolicLink`).
-- **Input/output struct layouts** — DriverScope tells you what kernel APIs each handler imports (`MmMapIoSpace`, `READ_PORT_UCHAR`, etc.) but the actual struct the handler reads is on you to reverse. Typical shapes:
-  - PhysMem mappers: `{ uint64 phys_addr; uint32 size; uint64 mapped_out; }`
-  - I/O-port drivers: `{ uint16 port; uint8 value; }`
-  - MSR access: `{ uint32 msr_index; uint64 value; }`
+- **`DEVICE_PATH`** — DriverScope reports `device_names` when it can recover them. For stripped or runtime-created devices, look it up with WinObj, `objdir`, or by reading `IoCreateSymbolicLink` in IDA.
+- **Per-IOCTL request structs** — DriverScope tells you which kernel APIs each handler imports (`MmMapIoSpace`, `READ_PORT_UCHAR`, etc.) so you know what *kind* of primitive it is, but the exact struct the handler reads from the input buffer is on you to reverse. Common shapes for reference:
+
+| Primitive | Typical input struct |
+|---|---|
+| PhysMem-Map | `{ uint64 phys_addr; uint32 size; uint64 mapped_out; }` |
+| PhysMem-Copy | `{ uint64 phys_src; uint64 size; uint8 out[N]; }` |
+| MSR | `{ uint32 msr_index; uint64 value; }` |
+| I/O-Port | `{ uint16 port; uint8 width; uint32 value; }` |
+| CR-Regs | `{ uint32 reg_index; uint64 value; }` |
+| PCI-Config | `{ uint8 bus; uint8 dev; uint8 fn; uint16 offset; uint32 value; }` |
 
 ### Templates
 
 | File | What it is |
 |---|---|
-| [`examples/comm_template.h`](examples/comm_template.h) | C header template with placeholders and pattern notes |
-| [`examples/ioctl_tester.c`](examples/ioctl_tester.c) | Minimal user-mode tester — sweep mode or single-IOCTL mode |
-| [`examples/gen_comm_header.py`](examples/gen_comm_header.py) | Generates a header from `driverscope ioctl --json` output |
+| [`examples/comm_template.h`](examples/comm_template.h) | C++ header pattern: per-IOCTL structs + `ExampleDriver` class with `Open()`, typed primitive wrappers (`ReadPhysical`, `ReadMsr`, `Probe`), generic `Invoke()` |
+| [`examples/ioctl_tester.cpp`](examples/ioctl_tester.cpp) | Three modes — *structured sweep* (validate each typed primitive with known-good inputs like BIOS shadow + EFER read), *raw sweep* (try N codes from a base), *single call* |
+| [`examples/gen_comm_header.py`](examples/gen_comm_header.py) | Generates `CTL_CODE` macros from `driverscope ioctl --json` output |
+
+### How the validators work
+
+The structured sweep in `ioctl_tester.cpp` shows the pattern for confirming a primitive really exists rather than just that the IOCTL code is *defined*:
+
+- **PhysMem-Map** — ask the handler to copy out bytes from `0x000F0000` (the BIOS shadow region). On most hardware that's reliably readable, so if you get non-zero bytes back, the handler genuinely walked physical memory.
+- **MSR** — read EFER (`0xC0000080`) and check that bit 11 (NXE) is set. NXE has been on since XP SP2, so a zero return means either the handler didn't actually `rdmsr` or it's lying to you.
+- **Probe** — send a magic cookie and check the handler echoes back a status field. Confirms the handler reaches `IoCompleteRequest` with your buffer.
+
+Add one of these per primitive class you find. The point is to distinguish "IOCTL code is wired" from "IOCTL code reaches a real primitive" — easy to confuse in static analysis alone.
 
 ### Safety
 
-Every `DeviceIoControl` call hits ring 0. A bad struct layout against a physmem driver will BSOD the box instantly. **Test in a VM with a snapshot you can roll back**, and don't run sweeps against drivers loaded on a host you care about.
+Every `DeviceIoControl` call hits ring 0. A bad struct layout against a physmem or MSR driver will BSOD instantly. **Test in a VM with a snapshot you can roll back**, never on a host you care about.
 
 ## Deeper IOCTL analysis with IDA
 
