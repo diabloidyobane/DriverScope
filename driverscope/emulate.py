@@ -56,13 +56,18 @@ PRIMITIVE_KEYWORDS = [
 ]
 
 
-EXTRA_SYSTEM_MODULES = [
-    {
-        "name": "dxgkrnl",
-        "base_addr": "0xD8000000",
-        "path": "C:\\Windows\\system32\\drivers\\dxgkrnl.sys",
-    },
-]
+# Uncomment to inject extra kernel modules into the Speakeasy module list.
+# Useful for unsigned/manual-mapped drivers that hook dxgkrnl exports
+# instead of using standard IOCTL dispatch.  Not needed for signed BYOVD
+# drivers which all use IoCreateDevice + IRP_MJ_DEVICE_CONTROL.
+# EXTRA_SYSTEM_MODULES = [
+#     {
+#         "name": "dxgkrnl",
+#         "base_addr": "0xD8000000",
+#         "path": "C:\\Windows\\system32\\drivers\\dxgkrnl.sys",
+#     },
+# ]
+EXTRA_SYSTEM_MODULES = []
 
 _fake_export_pages = {}
 
