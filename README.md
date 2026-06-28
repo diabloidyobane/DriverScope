@@ -172,6 +172,16 @@ Cached locally (30-day TTL), auto-throttles to free tier.
 - `wdm_filter.py` — WDM vs KMDF filter
 - `kdu.py` — KDU RMDX database parser
 
+## Recommended: pair with Claude for triage
+
+DriverScope surfaces candidates but doesn't reason about them. A useful workflow is to dump the JSON output (`--json` on any subcommand) along with the relevant decompilation, and ask **Claude Opus 4.6** (or any equivalent reasoning model) to triage:
+
+- *"Does this IOCTL actually expose a write-what-where, or is it gated by a check I'm missing?"*
+- *"Compare these handler imports to known LOLDrivers patterns — is this technique novel?"*
+- *"What's the realistic exploit chain if I can call IOCTL `0xfffc4e94` on `acpi.sys`?"*
+
+Claude Opus 4.6 handles long decompilation context well and is the default I tested with. If Anthropic releases a security-specialized model or tier (e.g. extended-thinking or red-team variants) and you have access, those will likely be better still for chain-of-reasoning over multi-step kernel exploit paths. Either way: **DriverScope finds the surface, the model helps you decide what's real.**
+
 ## Deeper IOCTL analysis with IDA
 
 DriverScope's static IOCTL extractor handles most drivers, but complex dispatchers (deeply nested, obfuscated, or virtualized) benefit from IDA Pro's full analysis. Use [re-mcp-ida](https://github.com/mrexodia/ida-pro-mcp) in headless mode:
