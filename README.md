@@ -150,19 +150,36 @@ driverscope wdm C:\drivers                       # WDM-only physmem filter
 
 ### Bulk vendor scraping
 
-The `bulk` subcommand uses Playwright to scrape vendor download portals at scale: MSI, ASRock, Gigabyte, Asus, Realtek, Intel, Station-Drivers, MS Update Catalog. Use it to build a corpus of vendor-signed drivers outside what's already in LOLDrivers.
+The `bulk` subcommand uses Playwright to scrape vendor download portals at scale. **55 vendors across 10 regions**: TW, HK, CN, KR, JP, RU, DE, US, IN, and multi-vendor global archives. Use it to build a corpus of vendor-signed drivers far outside what's already in LOLDrivers.
+
+| Region | Vendors |
+|---|---|
+| **TW** (10) | MSI, ASRock, Gigabyte, Asus, Acer, Biostar, ECS, Realtek, Foxconn-TW, PowerColor |
+| **HK** (2) | ZOTAC, Sapphire |
+| **CN** (10) | Lenovo, Huawei, Xiaomi, Colorful, Yeston, Galax, Onda, Foxconn-CN, ZTE, MAXSUN |
+| **KR** (3) | Samsung, LG, GIGABYTE-KR |
+| **JP** (7) | Buffalo, IO-Data, Elecom, Logitec-JP, Sony, NEC, Panasonic |
+| **RU** (5) | DriverPack, Driver.ru, DRP-Catalog, 4PDA, Yandex |
+| **DE** (4) | BeQuiet, Endorfy, Fujitsu, Medion |
+| **US** (7) | EVGA, XFX, Dell, HP, Intel-DSA, AMD, Nvidia |
+| **IN** (1) | iBall |
+| **global** (6) | Station-Drivers, MS Update Catalog, DriverGuide, TechSpot, CNET, MajorGeeks |
 
 ```bash
 pip install driverscope[bulk]
 playwright install chromium
 
-driverscope bulk --list                                  # see vendor targets
-driverscope bulk --vendors MSI-Support,ASRock-Support    # scrape specific vendors
-driverscope bulk --category motherboard --scan           # all motherboard vendors + scan
-driverscope bulk --output ./corpus --max-pages 10        # deep crawl
+driverscope bulk --list                              # 55 vendor targets, see above
+driverscope bulk --region CN,KR,RU --scan            # crawl China + Korea + Russia, scan results
+driverscope bulk --region JP --category laptop       # Japanese laptop vendors only
+driverscope bulk --vendors DriverPack-RU,4PDA-Files  # RU aggregator focus
+driverscope bulk --category gpu --output ./gpu_corpus
+driverscope bulk --max-pages 10                      # deep crawl, all vendors
 ```
 
 Output goes to `<output>/<vendor>/<file>`. Each vendor runs in parallel under a concurrency cap. Downloads cap at 200MB per file and skip files that already exist on disk (idempotent re-runs).
+
+**Why regional matters for BYOVD hunting**: CN, KR, JP, and RU vendors ship signed drivers that rarely appear in English-language security research. Many never reach LOLDrivers because nobody English-speaking has looked. The same goes for OEM laptop manufacturers' bundled telemetry/overclock/fan-control drivers — signed, broad install base, often built by third-party contractors with no security review.
 
 ### Bulk Claude triage
 
