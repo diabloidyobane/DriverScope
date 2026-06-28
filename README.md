@@ -1,5 +1,14 @@
 # DriverScope
 
+![Status](https://img.shields.io/badge/Status-Active-4ade80?style=flat-square&labelColor=2d3748)
+![Focus](https://img.shields.io/badge/Focus-Reverse_Engineering-3b82f6?style=flat-square&labelColor=2d3748)
+![Category](https://img.shields.io/badge/Category-BYOVD_Hunting-8b5cf6?style=flat-square&labelColor=2d3748)
+![Platform](https://img.shields.io/badge/Platform-Windows-3b82f6?style=flat-square&labelColor=2d3748)
+![Tools](https://img.shields.io/badge/Tools-Capstone-ef4444?style=flat-square&labelColor=2d3748)
+![Tools](https://img.shields.io/badge/Tools-IDA_/_Ghidra-facc15?style=flat-square&labelColor=2d3748)
+![Usage](https://img.shields.io/badge/Usage-Authorized_Research-f97316?style=flat-square&labelColor=2d3748)
+![License](https://img.shields.io/badge/License-MIT-22d3ee?style=flat-square&labelColor=2d3748)
+
 **Automated BYOVD hunting pipeline.** Scans Windows kernel drivers for dangerous imports, extracts IOCTL dispatch surfaces, cross-references against [LOLDrivers](https://www.loldrivers.io/) / [MS Blocklist](https://aka.ms/VulnerableDriverBlockList) / [KDU](https://github.com/hfiref0x/KDU), and surfaces novel zero-day candidates not yet in any public database.
 
 Python 3.10+, Windows. MIT-licensed.
