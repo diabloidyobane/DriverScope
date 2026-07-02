@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" role="img" aria-label="Reference wrappers and PoCs: from IOCTL surface to callable kernel primitive.">
+  <title>DriverScope PoC Banner</title>
+  <desc>User-mode to kernel-mode diagram with three drivers (KslD, WinNotify, RTCore64) crossing the IOCTL boundary into their kernel primitives. Stats: 3 PoCs, 25 IOCTL surfaces, 2 wrapper headers, 1 CVE.</desc>
+  <defs>
+    <style>
+      .label     { font: 600 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0ea5e9; letter-spacing: 3px; }
+      .title     { font: 700 44px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0f172a; }
+      .title-em  { font: italic 700 44px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0ea5e9; }
+      .sub       { font: 400 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #475569; }
+      .stat-n    { font: 700 26px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0ea5e9; }
+      .stat-l    { font: 600 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; letter-spacing: 1.5px; }
+      .meta      { font: 500 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #94a3b8; letter-spacing: 2px; }
+      .sep       { stroke: #334155; stroke-width: 1; opacity: 0.2; }
+
+      .zone-label { font: 700 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; letter-spacing: 3px; fill: #64748b; }
+      .box       { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1; }
+      .box-name  { font: 600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0f172a; }
+      .box-meta  { font: 500 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; letter-spacing: 1px; }
+
+      .ioctl     { fill: #ecfeff; stroke: #06b6d4; stroke-width: 1; }
+      .ioctl-t   { font: 700 11px 'SF Mono', Menlo, Consolas, monospace; fill: #0e7490; }
+
+      .prim-r    { fill: #f0fdf4; stroke: #22c55e; stroke-width: 1.2; }
+      .prim-a    { fill: #fef3c7; stroke: #f59e0b; stroke-width: 1.2; }
+      .prim-d    { fill: #fef2f2; stroke: #ef4444; stroke-width: 1.2; }
+      .prim-lbl  { font: 700 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0f172a; }
+      .prim-sub  { font: 500 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #475569; }
+
+      .boundary  { stroke: #cbd5e1; stroke-width: 1; stroke-dasharray: 4 4; }
+      .arrow     { stroke: #94a3b8; stroke-width: 1.2; fill: none; }
+
+      @media (prefers-color-scheme: dark) {
+        .title      { fill: #f1f5f9; }
+        .sub        { fill: #94a3b8; }
+        .zone-label { fill: #94a3b8; }
+        .box        { fill: #1e293b; stroke: #334155; }
+        .box-name   { fill: #f1f5f9; }
+        .box-meta   { fill: #94a3b8; }
+        .ioctl      { fill: #164e63; stroke: #0891b2; }
+        .ioctl-t    { fill: #67e8f9; }
+        .prim-r     { fill: #14532d; stroke: #22c55e; }
+        .prim-a     { fill: #78350f; stroke: #f59e0b; }
+        .prim-d     { fill: #7f1d1d; stroke: #ef4444; }
+        .prim-lbl   { fill: #f1f5f9; }
+        .prim-sub   { fill: #cbd5e1; }
+        .boundary   { stroke: #475569; }
+        .arrow      { stroke: #64748b; }
+      }
+    </style>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="400" fill="transparent"/>
+
+  <!-- LEFT VISUAL: user-mode / kernel-mode diagram -->
+  <g transform="translate(60,60)">
+    <!-- USER MODE zone label -->
+    <text x="0" y="10" class="zone-label">RING 3  /  USER MODE</text>
+
+    <!-- 3 driver wrapper boxes -->
+    <g transform="translate(0,20)">
+      <rect x="0"   y="0" width="140" height="46" rx="4" class="box"/>
+      <text x="70"  y="20" text-anchor="middle" class="box-name">KslD.sys</text>
+      <text x="70"  y="36" text-anchor="middle" class="box-meta">WHQL &#183; 20 SUB-CMDS</text>
+
+      <rect x="160" y="0" width="140" height="46" rx="4" class="box"/>
+      <text x="230" y="20" text-anchor="middle" class="box-name">WinNotify.sys</text>
+      <text x="230" y="36" text-anchor="middle" class="box-meta">WHCP &#183; 5 IOCTLS</text>
+
+      <rect x="320" y="0" width="140" height="46" rx="4" class="box"/>
+      <text x="390" y="20" text-anchor="middle" class="box-name">RTCore64.sys</text>
+      <text x="390" y="36" text-anchor="middle" class="box-meta">CVE-2019-16098</text>
+    </g>
+
+    <!-- Downward arrows through boundary -->
+    <line x1="70"  y1="72" x2="70"  y2="112" class="arrow" marker-end="url(#arr)"/>
+    <line x1="230" y1="72" x2="230" y2="112" class="arrow" marker-end="url(#arr)"/>
+    <line x1="390" y1="72" x2="390" y2="112" class="arrow" marker-end="url(#arr)"/>
+
+    <!-- IOCTL boundary -->
+    <line x1="-10" y1="92" x2="470" y2="92" class="boundary"/>
+    <text x="470" y="88" text-anchor="end" class="box-meta" style="letter-spacing:2px;">IOCTL DISPATCH</text>
+
+    <!-- IOCTL codes floating on boundary -->
+    <g transform="translate(0,84)">
+      <rect x="30"  y="0" width="80" height="16" rx="8" class="ioctl"/>
+      <text x="70"  y="12" text-anchor="middle" class="ioctl-t">0x222044</text>
+
+      <rect x="190" y="0" width="80" height="16" rx="8" class="ioctl"/>
+      <text x="230" y="12" text-anchor="middle" class="ioctl-t">0x22204x</text>
+
+      <rect x="350" y="0" width="80" height="16" rx="8" class="ioctl"/>
+      <text x="390" y="12" text-anchor="middle" class="ioctl-t">0x80002048</text>
+    </g>
+
+    <!-- 3 primitive boxes below boundary -->
+    <g transform="translate(0,120)">
+      <rect x="0"   y="0" width="140" height="46" rx="4" class="prim-r"/>
+      <text x="70"  y="20" text-anchor="middle" class="prim-lbl">Read-only</text>
+      <text x="70"  y="36" text-anchor="middle" class="prim-sub">CPU regs &#183; PhysMem R</text>
+
+      <rect x="160" y="0" width="140" height="46" rx="4" class="prim-d"/>
+      <text x="230" y="20" text-anchor="middle" class="prim-lbl">Full R/W</text>
+      <text x="230" y="36" text-anchor="middle" class="prim-sub">Kernel + CR3 xproc</text>
+
+      <rect x="320" y="0" width="140" height="46" rx="4" class="prim-a"/>
+      <text x="390" y="20" text-anchor="middle" class="prim-lbl">PhysMem R/W</text>
+      <text x="390" y="36" text-anchor="middle" class="prim-sub">Page-table walk</text>
+    </g>
+
+    <!-- KERNEL zone label -->
+    <text x="0" y="185" class="zone-label">RING 0  /  KERNEL</text>
+  </g>
+
+  <!-- RIGHT TEXT PANEL, anchored at x=855 -->
+  <text x="855" y="80" text-anchor="middle" class="label">REFERENCE WRAPPERS + POCs</text>
+
+  <text x="855" y="150" text-anchor="middle" class="title">From IOCTL surface</text>
+  <text x="855" y="205" text-anchor="middle">
+    <tspan class="title">to callable </tspan><tspan class="title-em">primitive</tspan><tspan class="title">.</tspan>
+  </text>
+
+  <text x="855" y="248" text-anchor="middle" class="sub">Single-header C++ wrappers plus compilable PoCs. Learn the primitive, then confirm it.</text>
+
+  <!-- STATS ROW -->
+  <g transform="translate(855,305)">
+    <text x="-240" y="0" text-anchor="middle" class="stat-n">3</text>
+    <text x="-240" y="16" text-anchor="middle" class="stat-l">POCs</text>
+
+    <line x1="-155" y1="-14" x2="-155" y2="18" class="sep"/>
+
+    <text x="-70" y="0" text-anchor="middle" class="stat-n">25</text>
+    <text x="-70" y="16" text-anchor="middle" class="stat-l">IOCTL SURFACES</text>
+
+    <line x1="15" y1="-14" x2="15" y2="18" class="sep"/>
+
+    <text x="100" y="0" text-anchor="middle" class="stat-n">2</text>
+    <text x="100" y="16" text-anchor="middle" class="stat-l">WRAPPER HEADERS</text>
+
+    <line x1="185" y1="-14" x2="185" y2="18" class="sep"/>
+
+    <text x="270" y="0" text-anchor="middle" class="stat-n">1</text>
+    <text x="270" y="16" text-anchor="middle" class="stat-l">KNOWN CVE</text>
+  </g>
+
+  <text x="855" y="370" text-anchor="middle" class="meta">C++17 &#183; WINDOWS SDK ONLY &#183; NO DEPENDENCIES</text>
+</svg>

@@ -736,3 +736,125 @@ def enrich_with_blocklist(results: list[DriverResult],
     for r in results:
         if r.sha256 and r.sha256.lower() in blocklist:
             r.ms_blocked = True
+
+
+HUNT_WEIGHTS = {
+    "per_primitive_class":  2,
+    "hvci_bypass":          6,
+    "lol_known":            2,
+    "unsigned":            -3,
+    "vt_high_detection":   -8,
+    "vt_med_detection":    -3,
+}
+
+
+def hunt_score(r: DriverResult) -> Optional[int]:
+    """Score a single driver. None = hard-disqualified (MS-blocked)."""
+    if r.ms_blocked:
+        return None
+    s = 0
+    s += HUNT_WEIGHTS["per_primitive_class"] * len(r.primitive_classes)
+    if getattr(r, "lol_hvci_bypass", False):
+        s += HUNT_WEIGHTS["hvci_bypass"]
+    if getattr(r, "lol_known", False):
+        s += HUNT_WEIGHTS["lol_known"]
+    if not r.signed:
+        s += HUNT_WEIGHTS["unsigned"]
+    if r.vt and r.vt.total_engines:
+        if r.vt.detections > 5:
+            s += HUNT_WEIGHTS["vt_high_detection"]
+        elif r.vt.detections >= 1:
+            s += HUNT_WEIGHTS["vt_med_detection"]
+    return s
+
+
+def hunt_rank(results: list[DriverResult]) -> list[tuple[DriverResult, int]]:
+    """Return (driver, score) pairs sorted desc, MS-blocked filtered out."""
+    scored: list[tuple[DriverResult, int]] = []
+    for r in results:
+        if not r.primitive_classes:
+            continue
+        s = hunt_score(r)
+        if s is None:
+            continue
+        scored.append((r, s))
+    scored.sort(key=lambda x: (-x[1], x[0].filename.lower()))
+    return scored
+
+
+def hunt_dossier_markdown(results: list[DriverResult],
+                          ranked: list[tuple[DriverResult, int]],
+                          target_path: str,
+                          top_n: int = 3) -> str:
+    """Render a markdown dossier for the top picks."""
+    import datetime
+    lines: list[str] = []
+    lines.append(f"# BYOVD Hunt Dossier — {target_path}")
+    lines.append(f"_Generated: {datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}_\n")
+
+    bl = sum(1 for r in results if r.ms_blocked)
+    lines.append(f"**Corpus**: {len(results)} files scanned, "
+                 f"{len([r for r in results if r.primitive_classes])} flagged, "
+                 f"{bl} MS-blocked (disqualified).\n")
+
+    if not ranked:
+        lines.append("**No viable candidates.** All flagged drivers are MS-blocked.\n")
+        return "\n".join(lines)
+
+    try:
+        from driverscope.ioctl import extract_ioctl_surface as _extract
+    except ImportError:
+        _extract = None
+
+    lines.append(f"## Top {min(top_n, len(ranked))} picks\n")
+    for i, (r, score) in enumerate(ranked[:top_n], 1):
+        lines.append(f"### {i}. {r.filename}  (score: {score})")
+        lines.append(f"- **SHA256**: `{r.sha256}`")
+        lines.append(f"- **Size**: {r.size_bytes / 1024:.0f} KB, arch: {r.machine}, signed: {r.signed}")
+        if r.signer and r.signer not in ("(signed)", "(no authenticode)"):
+            lines.append(f"- **Signer**: {r.signer}")
+        lines.append(f"- **Primitive classes** ({len(r.primitive_classes)}): {', '.join(r.primitive_classes)}")
+        if getattr(r, "lol_known", False):
+            hvci = "BYPASSES HVCI" if getattr(r, "lol_hvci_bypass", False) else "blocked by HVCI"
+            lines.append(f"- **LOLDrivers**: {r.lol_id} ({hvci})")
+            if r.lol_cves:
+                lines.append(f"- **CVEs**: {', '.join(r.lol_cves[:5])}")
+        if r.vt and r.vt.total_engines:
+            lines.append(f"- **VT**: {r.vt.detections}/{r.vt.total_engines} detections, "
+                         f"reputation={r.vt.reputation}, first seen {r.vt.first_seen}")
+            if r.vt.detection_names:
+                lines.append(f"- **VT labels**: {', '.join(r.vt.detection_names[:5])}")
+        lines.append(f"- **Path**: `{r.path}`")
+        if _extract is not None:
+            try:
+                surf = _extract(r.path)
+                if surf.ioctls:
+                    any_access = sum(1 for io in surf.ioctls if io.access == 0)
+                    neither = sum(1 for io in surf.ioctls if io.method == 3)
+                    lines.append(f"- **IOCTL surface**: {len(surf.ioctls)} codes "
+                                 f"(METHOD_NEITHER: {neither}, FILE_ANY_ACCESS: {any_access}) "
+                                 f"@ dispatcher 0x{surf.dispatcher_rva:x}")
+                    flagged = [io for io in surf.ioctls if io.primitive_classes or io.danger_flags]
+                    for io in flagged[:5]:
+                        bits = []
+                        if io.primitive_classes:
+                            bits.append(f"classes={','.join(io.primitive_classes)}")
+                        if io.danger_flags:
+                            bits.append(f"flags={','.join(io.danger_flags)}")
+                        lines.append(f"  - `{io.code}` {io.method_name} {io.access_name} — {'; '.join(bits)}")
+            except Exception:
+                pass
+        lines.append("")
+
+    if len(ranked) > top_n:
+        lines.append(f"## Runners-up ({len(ranked) - top_n})\n")
+        lines.append("| # | Driver | Score | Classes | HVCI | VT | Signed |")
+        lines.append("|---|---|---|---|---|---|---|")
+        for i, (r, score) in enumerate(ranked[top_n:top_n + 10], top_n + 1):
+            hvci = "+" if getattr(r, "lol_hvci_bypass", False) else "-"
+            vt = f"{r.vt.detections}/{r.vt.total_engines}" if r.vt and r.vt.total_engines else "-"
+            lines.append(f"| {i} | {r.filename} | {score} | {len(r.primitive_classes)} | {hvci} | {vt} | "
+                         f"{'yes' if r.signed else 'NO'} |")
+        lines.append("")
+
+    return "\n".join(lines)

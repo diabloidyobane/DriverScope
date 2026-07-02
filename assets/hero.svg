@@ -1,37 +1,117 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" role="img" aria-label="DriverScope - Automated BYOVD Hunting. Find vulnerable drivers before attackers do.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" role="img" aria-label="DriverScope: Automated BYOVD hunting pipeline. Find vulnerable drivers before attackers do.">
+  <title>DriverScope Hero Banner</title>
+  <desc>Radar scope visual with project stats: 18 drivers cataloged, 65 KDU providers classified, 29 modules, 55 vendor targets.</desc>
   <defs>
     <style>
-      .label   { font: 600 16px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0ea5e9; letter-spacing: 3px; }
-      .head    { font: 700 64px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0f172a; }
-      .head-em { font: italic 700 64px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0ea5e9; }
-      .sub     { font: 400 18px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #475569; }
-      .meta    { font: 500 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; letter-spacing: 2px; }
+      .label   { font: 600 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0ea5e9; letter-spacing: 3px; }
+      .title   { font: 700 48px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0f172a; }
+      .title-em { font: italic 700 48px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0ea5e9; }
+      .sub     { font: 400 16px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #475569; }
+      .stat-n  { font: 700 26px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0ea5e9; }
+      .stat-l  { font: 600 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; letter-spacing: 1.5px; }
+      .meta    { font: 500 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #94a3b8; letter-spacing: 2px; }
+      .ring    { fill: none; stroke: #0ea5e9; stroke-width: 1; opacity: 0.18; }
+      .cross   { stroke: #0ea5e9; stroke-width: 0.7; opacity: 0.10; }
+      .tick    { stroke: #0ea5e9; stroke-width: 1; opacity: 0.35; }
+      .dot-g   { fill: #4ade80; }
+      .dot-a   { fill: #f59e0b; }
+      .dot-r   { fill: #ef4444; }
+      .sep     { stroke: #334155; stroke-width: 1; opacity: 0.2; }
       @media (prefers-color-scheme: dark) {
-        .head { fill: #f1f5f9; }
-        .sub { fill: #94a3b8; }
-        .meta { fill: #64748b; }
+        .title   { fill: #f1f5f9; }
+        .sub     { fill: #94a3b8; }
+        .ring    { opacity: 0.25; }
+        .cross   { opacity: 0.15; }
       }
     </style>
   </defs>
 
-  <!-- background (transparent: inherits GitHub theme) -->
   <rect width="1200" height="400" fill="transparent"/>
 
-  <!-- top label -->
-  <text x="600" y="80" text-anchor="middle" class="label">AUTOMATED BYOVD HUNTING</text>
+  <!-- SCOPE VISUAL at (210, 200) -->
+  <g transform="translate(210,200)">
+    <circle r="160" class="ring"/>
+    <circle r="120" class="ring"/>
+    <circle r="80"  class="ring"/>
+    <circle r="40"  class="ring"/>
 
-  <!-- headline line 1 -->
-  <text x="600" y="170" text-anchor="middle" class="head">Find vulnerable drivers</text>
+    <line x1="-170" y1="0" x2="170" y2="0" class="cross"/>
+    <line x1="0" y1="-170" x2="0" y2="170" class="cross"/>
+    <line x1="-120" y1="-120" x2="120" y2="120" class="cross"/>
+    <line x1="120" y1="-120" x2="-120" y2="120" class="cross"/>
 
-  <!-- headline line 2 (with italic accent on 'attackers') -->
-  <text x="600" y="240" text-anchor="middle">
-    <tspan class="head">before </tspan><tspan class="head-em">attackers</tspan><tspan class="head"> do.</tspan>
+    <!-- tick marks at cardinal points on each ring -->
+    <line x1="0" y1="-163" x2="0" y2="-157" class="tick"/>
+    <line x1="163" y1="0" x2="157" y2="0" class="tick"/>
+    <line x1="0" y1="163" x2="0" y2="157" class="tick"/>
+    <line x1="-163" y1="0" x2="-157" y2="0" class="tick"/>
+    <line x1="0" y1="-123" x2="0" y2="-117" class="tick"/>
+    <line x1="123" y1="0" x2="117" y2="0" class="tick"/>
+    <line x1="0" y1="123" x2="0" y2="117" class="tick"/>
+    <line x1="-123" y1="0" x2="-117" y2="0" class="tick"/>
+
+    <!-- sweep sector -->
+    <path d="M0,0 L0,-160 A160,160 0 0,1 138.6,-80 Z" fill="#0ea5e9" opacity="0.06"/>
+    <path d="M0,0 L0,-120 A120,120 0 0,1 103.9,-60 Z" fill="#0ea5e9" opacity="0.09"/>
+    <path d="M0,0 L0,-80 A80,80 0 0,1 69.3,-40 Z" fill="#0ea5e9" opacity="0.12"/>
+
+    <!-- sweep edge line -->
+    <line x1="0" y1="0" x2="138.6" y2="-80" stroke="#0ea5e9" stroke-width="1.2" opacity="0.25"/>
+
+    <!-- target dots: found drivers -->
+    <circle cx="50"   cy="-105" r="4"   class="dot-r"/>
+    <circle cx="-90"  cy="55"   r="3.5" class="dot-g"/>
+    <circle cx="110"  cy="-25"  r="3.5" class="dot-a"/>
+    <circle cx="-25"  cy="-70"  r="3"   class="dot-g"/>
+    <circle cx="65"   cy="85"   r="4"   class="dot-r"/>
+    <circle cx="-115" cy="-35"  r="3"   class="dot-a"/>
+    <circle cx="25"   cy="48"   r="3"   class="dot-g"/>
+    <circle cx="-65"  cy="-115" r="3.5" class="dot-r"/>
+    <circle cx="135"  cy="50"   r="3"   class="dot-g"/>
+    <circle cx="-40"  cy="125"  r="3"   class="dot-a"/>
+    <circle cx="15"   cy="-140" r="3"   class="dot-r"/>
+    <circle cx="-100" cy="-90"  r="3"   class="dot-g"/>
+    <circle cx="80"   cy="130"  r="3.5" class="dot-a"/>
+    <circle cx="-145" cy="20"   r="3"   class="dot-r"/>
+    <circle cx="40"   cy="-35"  r="3"   class="dot-g"/>
+    <circle cx="-55"  cy="80"   r="3"   class="dot-r"/>
+    <circle cx="95"   cy="-110" r="3"   class="dot-g"/>
+    <circle cx="-15"  cy="150"  r="3.5" class="dot-a"/>
+
+    <!-- center dot -->
+    <circle r="3" fill="#0ea5e9" opacity="0.5"/>
+  </g>
+
+  <!-- TEXT (right panel, anchored at x=730) -->
+  <text x="730" y="75" text-anchor="middle" class="label">AUTOMATED BYOVD HUNTING</text>
+
+  <text x="730" y="145" text-anchor="middle" class="title">Find vulnerable drivers</text>
+  <text x="730" y="200" text-anchor="middle">
+    <tspan class="title">before </tspan><tspan class="title-em">attackers</tspan><tspan class="title"> do.</tspan>
   </text>
 
-  <!-- subtitle -->
-  <text x="600" y="295" text-anchor="middle" class="sub">Python CLI that scans Windows kernel drivers for dangerous imports,</text>
-  <text x="600" y="320" text-anchor="middle" class="sub">extracts IOCTL dispatch surfaces, and surfaces novel zero-day candidates.</text>
+  <text x="730" y="248" text-anchor="middle" class="sub">Scan, extract, emulate, and triage Windows kernel drivers at scale.</text>
 
-  <!-- meta -->
-  <text x="600" y="370" text-anchor="middle" class="meta">PYTHON 3.10+ &#183; WINDOWS &#183; MIT LICENSE</text>
+  <!-- STATS ROW -->
+  <g transform="translate(730,305)">
+    <text x="-240" y="0" text-anchor="middle" class="stat-n">18</text>
+    <text x="-240" y="16" text-anchor="middle" class="stat-l">DRIVERS FOUND</text>
+
+    <line x1="-155" y1="-14" x2="-155" y2="18" class="sep"/>
+
+    <text x="-70" y="0" text-anchor="middle" class="stat-n">65</text>
+    <text x="-70" y="16" text-anchor="middle" class="stat-l">KDU CLASSIFIED</text>
+
+    <line x1="15" y1="-14" x2="15" y2="18" class="sep"/>
+
+    <text x="100" y="0" text-anchor="middle" class="stat-n">29</text>
+    <text x="100" y="16" text-anchor="middle" class="stat-l">MODULES</text>
+
+    <line x1="185" y1="-14" x2="185" y2="18" class="sep"/>
+
+    <text x="270" y="0" text-anchor="middle" class="stat-n">55</text>
+    <text x="270" y="16" text-anchor="middle" class="stat-l">VENDOR TARGETS</text>
+  </g>
+
+  <text x="730" y="370" text-anchor="middle" class="meta">PYTHON 3.10+ &#183; WINDOWS &#183; MIT LICENSE</text>
 </svg>

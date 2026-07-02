@@ -1,4 +1,9 @@
-"""Download OEM utilities and extract kernel drivers for scanning."""
+"""Download OEM utilities and extract kernel drivers for scanning.
+
+Base SOURCES covers 10 well-known hardware monitoring tools.
+Sub-modules add ~55 vendor-specific targets across sysinfo, RGB,
+storage, BMC, Chinese forums, VPN, and OEM BIOS/firmware utilities.
+"""
 
 import hashlib
 import json
@@ -11,6 +16,14 @@ import tarfile
 from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.parse import urlparse, unquote
+
+from .sysinfo import SOURCES as SYSINFO
+from .rgb import SOURCES as RGB
+from .storage import SOURCES as STORAGE
+from .bmc import SOURCES as BMC
+from .cn import SOURCES as CN
+from .vpn import SOURCES as VPN
+from .oem import SOURCES as OEM
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 GITHUB_API = "https://api.github.com"
@@ -91,6 +104,16 @@ SOURCES = [
         "urls": [],
         "notes": "System info, bundles aida64.sys (commercial, manual download)",
     },
+]
+
+EXTRA_SOURCES = SYSINFO + RGB + STORAGE + BMC + CN + VPN + OEM
+
+ALL_SOURCES = SOURCES + EXTRA_SOURCES
+
+__all__ = [
+    "SOURCES", "EXTRA_SOURCES", "ALL_SOURCES",
+    "SYSINFO", "RGB", "STORAGE", "BMC", "CN", "VPN", "OEM",
+    "harvest",
 ]
 
 
@@ -192,7 +215,17 @@ def _extract_pe_resources(pe_path: Path, output_dir: Path) -> list[Path]:
     return extracted
 
 
-def harvest(output_dir: str, categories: list[str] = None) -> dict:
+def harvest(output_dir: str, categories: list[str] = None,
+            extra: bool = True) -> dict:
+    """Download and extract .sys files from vendor tool archives.
+
+    Args:
+        output_dir: Where to store downloads and extracted drivers.
+        categories: Filter to these categories only (None = all).
+        extra: Include EXTRA_SOURCES sub-module targets (default True).
+    """
+    sources = ALL_SOURCES if extra else SOURCES
+
     out = Path(output_dir)
     staging = out / "_staging"
     drivers_dir = out / "drivers"
@@ -211,7 +244,7 @@ def harvest(output_dir: str, categories: list[str] = None) -> dict:
     total_extracted = 0
     all_drivers: list[Path] = []
 
-    for source in SOURCES:
+    for source in sources:
         if categories and source["category"] not in categories:
             continue
 
@@ -242,7 +275,6 @@ def harvest(output_dir: str, categories: list[str] = None) -> dict:
                 if _download_file(url, dest):
                     total_downloaded += 1
 
-            # Extract .sys files
             extracted = _extract_sys_files(dest, drivers_dir)
             if not extracted and dest.suffix.lower() in (".exe", ".msi"):
                 extracted = _extract_pe_resources(dest, drivers_dir)
@@ -256,7 +288,6 @@ def harvest(output_dir: str, categories: list[str] = None) -> dict:
                     print(f"    Extracted: {drv.name} ({h[:16]}...)",
                           file=sys.stderr)
 
-    # Save seen hashes
     try:
         seen_path.write_text(json.dumps(sorted(seen), indent=2))
     except Exception:

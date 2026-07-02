@@ -24,8 +24,12 @@ Python 3.10+, Windows. MIT-licensed.
 
 ```bash
 pip install git+https://github.com/diabloidyobane/DriverScope.git
-pip install capstone              # optional, better IOCTL extraction
-pip install speakeasy-emulator    # optional, driver emulation via Speakeasy
+pip install driverscope[disasm]    # capstone, better IOCTL extraction
+pip install driverscope[emulate]   # Speakeasy driver emulation
+pip install driverscope[cluster]   # TLSH fuzzy-hash clustering
+pip install driverscope[bulk]      # Playwright + httpx for vendor scraping
+pip install driverscope[triage]    # Claude API triage
+pip install driverscope[all]       # everything above
 ```
 
 ## Quick start
@@ -126,13 +130,16 @@ Every flagged import maps to a kernel primitive that BYOVD attacks exploit:
 |---|---|
 | `scan` | Scan .sys files for dangerous kernel imports |
 | `ioctl` | Extract IOCTL dispatch surface from a driver |
-| `emulate` | Speakeasy emulation: trace DriverEntry, extract device names, PDB paths, debug strings |
+| `emulate` | Speakeasy emulation: trace DriverEntry, device names, PDB, debug strings |
 | `hunt` | Full-system zero-day hunting pipeline |
 | `harvest` | Download OEM tools and extract embedded drivers |
+| `pipeline` | End-to-end orchestrator (harvest + scan + enrich + cluster + diff + dossier) |
 | `regional` | Search LOLDrivers by regional vendor (CN/KR/JP/TW/RU) |
 | `wdm` | Filter for WDM drivers with physmem primitives |
 | `bulk` | Bulk-scrape vendor download portals via Playwright |
 | `triage` | Bulk Claude API triage of scan/ioctl findings |
+| `novel` | Check which scan results are absent from LOLDrivers |
+| `fuzz` | Generate boofuzz IOCTL fuzzing harness for a driver |
 
 ### All options
 
@@ -149,6 +156,9 @@ driverscope ioctl C:\drivers --hits-only         # batch directory, skip empty
 driverscope emulate driver.sys                   # trace DriverEntry via Speakeasy
 driverscope emulate C:\drivers --json            # batch emulate a directory
 driverscope harvest --output ./harvested --scan  # download OEM tools, extract + scan
+driverscope pipeline --all                       # full end-to-end hunt
+driverscope novel findings.json                  # LOLDrivers novelty check
+driverscope fuzz driver.sys --out harness.py     # generate fuzzing harness
 driverscope regional --region CN,JP              # LOLDrivers by vendor region
 driverscope wdm C:\drivers                       # WDM-only physmem filter
 ```
@@ -244,6 +254,111 @@ What emulation finds that static import scanning doesn't:
 
 Emulation runs at ~100ms per driver. It complements the `scan` and `ioctl` subcommands: `scan` catches the import table, `ioctl` maps the dispatch surface, `emulate` reveals everything the developer left in the binary's strings and initialization path.
 
+### Pipeline orchestrator
+
+The `pipeline` subcommand runs every stage in sequence: harvest vendor sources, build the local corpus, scan, enrich with LOLDrivers + MS Blocklist, simulate HVCI verdicts, cluster by TLSH similarity, diff against prior runs, and write a ranked markdown + HTML dossier.
+
+```bash
+driverscope pipeline --all                        # everything
+driverscope pipeline --harvest --cluster --diff    # selective stages
+driverscope pipeline --hvci-simulate --top 10      # HVCI filter + deeper dossier
+driverscope pipeline --extra-root ./my_drivers     # custom corpus root
+```
+
+Results persist to a SQLite database. Each run records corpus size, hit count, and MS blocklist coverage. The diff stage compares the current scan against the most recent prior run and flags newly appeared or newly flagged drivers.
+
+### Fuzzing harness generation
+
+```bash
+driverscope fuzz driver.sys --out harness.py
+```
+
+Generates a [boofuzz](https://github.com/jtpereyda/boofuzz) harness pre-populated with every IOCTL code from the driver's dispatch surface. Flagged IOCTLs (those whose handlers import dangerous APIs) get annotated fuzz blocks. Non-flagged IOCTLs are included but commented out by default (pass `--all` to activate them).
+
+---
+
+## Driver catalog
+
+18 drivers, grouped by the kernel primitive each exposes: cross-process virtual memory R/W, physical memory R/W, or process termination. Real intrusions combine them: a termination driver stops the EDR agent, then a memory driver reads LSASS.
+
+### Cross-process virtual memory R/W
+
+Imports one of `MmCopyVirtualMemory`, `ZwReadVirtualMemory`, `ZwWriteVirtualMemory`. Attack shape: attach to another process by PID or handle, then read or write pages inside its virtual address space. No page-table walk, no physical memory. Enough for dumping credential material from `lsass.exe` or patching code inside a target process.
+
+### Physical memory R/W
+
+The largest group. Imports include `MmMapIoSpace`, `MmCopyMemory`, `ZwMapViewOfSection` against `\Device\PhysicalMemory`, or a CR3-based page-table walker built into the driver. KslD.sys sits here on the read side (`MmCopyMemory` with `MM_COPY_MEMORY_PHYSICAL`), WinNotify.sys covers kernel R/W plus CR3-based cross-process access, and RTCore64.sys (CVE-2019-16098) is the MSI Afterburner driver, on the MS Blocklist. Anything in this group bypasses HVCI's per-page R/W enforcement, because HVCI enforces on kernel virtual addresses, not on physical mappings that a signed driver holds.
+
+### Process termination
+
+One import: `ZwTerminateProcess`, or an equivalent open-and-kill IOCTL. That's enough to stop the userland half of an EDR agent: CrowdStrike's `CSFalconService.exe`, Defender's `MsMpEng.exe`, SentinelOne's `SentinelAgent.exe`. These drivers cannot map memory or write to kernel space on their own, so operators pair them with a memory-R/W driver in real intrusions.
+
+### LOLDrivers tracking
+
+Three physmem-R/W drivers from this catalog have landed in LOLDrivers since the initial analysis: TRIXX (physmem map), WDTKernel (physmem copy), CorsairLLAccess (I2C/SMBus physmem). Their entries now carry CVE numbers and blocklist hashes. `driverscope novel findings.json` runs the cross-check against the current LOLDrivers set at scan time.
+
+---
+
+## KDU provider classification
+
+All 65 KDU providers classified by the kernel primitive each exploits. Most use `MmCopyVirtualMemory` for cross-process virtual memory R/W. A smaller set maps physical memory (`MmMapIoSpace`, `ZwMapViewOfSection`), and a handful exploit MSR access, PCI config, or debug register primitives.
+
+Run `driverscope scan` with `--lol` to see which KDU providers overlap with your corpus.
+
+---
+
+<p align="center">
+  <img src="assets/hero-poc.svg" alt="From IOCTL surface to callable primitive. Reference wrappers + PoCs." width="100%"/>
+</p>
+
+## Reference wrappers + PoCs
+
+Single-header C++ IOCTL wrappers for two analyzed drivers, plus three compilable PoCs demonstrating the primitives end-to-end. Each header is self-contained (no dependencies beyond Windows SDK) and includes typed methods for every documented IOCTL.
+
+### The three PoCs
+
+| File | Driver | Primitive |
+|---|---|---|
+| [`examples/poc_ksld.cpp`](examples/poc_ksld.cpp) | KslD.sys | Read-only: CPU regs, KASLR bypass, physmem read, EPROCESS walk |
+| [`examples/poc_winnotify.cpp`](examples/poc_winnotify.cpp) | WinNotify.sys | Full R/W: kernel read/write, CR3-based cross-process read, safe write proof |
+| [`examples/poc_rtcore64.cpp`](examples/poc_rtcore64.cpp) | RTCore64.sys (CVE-2019-16098) | PhysMem R/W: 4-level page-table walk, EPROCESS walk via physical memory |
+
+Build any of them with `cl /EHsc /std:c++17 examples/poc_XXX.cpp` or MinGW `g++`. Each PoC is safe by construction: every write primitive uses a read-modify-verify round-trip on a value it just read, no destructive kernel modification.
+
+### KslD.sys (read-only)
+
+[`examples/wrappers/KslD.h`](examples/wrappers/KslD.h) -- Microsoft WHQL-signed (Intel TDT internally). Single IOCTL `0x222044` with 20 sub-commands dispatched by a DWORD at input offset 0.
+
+Key sub-commands:
+
+| Sub-cmd | Primitive | Notes |
+|---|---|---|
+| 2 | CPU register dump | Returns RAX-R15, RIP, RFLAGS, segment regs. KASLR info leak. |
+| 12 (mode=1) | Physical memory read | `MmCopyMemory` with `MM_COPY_MEMORY_PHYSICAL`. Chunks at 0x400 bytes. |
+| 12 (mode=2) | Kernel VA read | `MmCopyMemory` with `MM_COPY_MEMORY_VIRTUAL`. Same chunking. |
+
+Access gate: the driver checks a `AllowedProcessName` registry value under its service key. Set it to your process name before calling.
+
+Wrapper provides: `Open`, `Close`, `GetCpuRegisters`, `ReadPhysical`, `ReadKernelVA`, `FindKernelBase` (IDTR scan), `FindExport`, `TranslateVA` (full 4-level page-table walk with large page and transition page support), `ReadProcessMemory`, `FindProcess`, `ReadProc<T>`, `SetAllowedProcess`.
+
+### WinNotify.sys (full R/W)
+
+[`examples/wrappers/WinNotify.h`](examples/wrappers/WinNotify.h) -- WHCP-signed (Aspect/R6 lineage). 5 IOCTLs. Full kernel + process memory R/W. No admin check on current builds.
+
+| IOCTL | Primitive | Buffer layout |
+|---|---|---|
+| `0x22200C` | Module base lookup | Input: 8-byte driver index. Output: base address. |
+| `0x222040` | Kernel read (5 QWORDs) | Input: VA. Output: 5 consecutive QWORDs from that address. |
+| `0x222044` | Kernel write | Input: `{VA, size, data[]}`. Uses `memmove`. |
+| `0x222000` | CR3-based read | Input: `{CR3, VA, size}`. Output: data at translated physical address. |
+| `0x222004` | CR3-based write | Input: `{CR3, VA, size, data[]}`. Translates and writes. |
+
+Wrapper provides: `Open`, `Close`, `GetModuleBase`, `KernelRead5`, `ReadKernelQWORD` (offset trick on 0x222040), `ReadKernelVA`, `WriteKernelVA`, `Cr3Read`, `Cr3Write`, `ReadProcessMemory`, `WriteProcessMemory`, `FindProcess` (EPROCESS walk with auto-detect PID/ImageFileName/ActiveProcessLinks offsets), `ReadProc<T>`, `WriteProc<T>`.
+
+### IDT hijack (downstream technique)
+
+WinNotify's kernel write primitive enables IDT (Interrupt Descriptor Table) hijacking as documented by Exploit Pack. The attack replaces an IDT entry's handler pointer with a shellcode address, then triggers that interrupt from user mode. Under VBS/HVCI/kCET, the IDT lives in read-only memory and the ISR must be a valid signed code page. WinNotify's `memmove`-based write bypasses this because it executes in kernel context on the driver's own code pages, which are already signed and loaded.
+
 ### VirusTotal
 
 ```bash
@@ -264,16 +379,56 @@ Cached locally (30-day TTL), auto-throttles to free tier.
 5. Score remaining by primitive weights + signed/x64/IOCTL bonuses
 6. Report top candidates with SHA256, signer, device names, IOCTLs
 
-## Modules
+## Modules (29)
 
-- `scanner.py`: PE import scanner, VT/LOLDrivers/Blocklist integration
-- `ioctl.py`: static IOCTL dispatch extraction (Capstone + bytescan)
-- `emulate.py`: Speakeasy driver emulation, DriverEntry tracing, string/PDB/device extraction
-- `hunter.py`: zero-day pipeline with novelty scoring
-- `harvester.py`: OEM tool downloader + .sys extractor
-- `regional.py`: regional vendor search (CN/KR/JP/TW/RU)
-- `wdm_filter.py`: WDM vs KMDF filter
-- `kdu.py`: KDU RMDX database parser
+**Core analysis**
+
+| Module | Description |
+|---|---|
+| `scanner` | PE import scanner, VT/LOLDrivers/Blocklist enrichment, hunt scoring |
+| `ioctl` | Static IOCTL dispatch extraction (Capstone + bytescan) |
+| `emulate` | Speakeasy DriverEntry tracing, string/PDB/device extraction |
+| `hunter` | Zero-day pipeline with novelty scoring |
+| `kdu` | KDU RMDX database parser (65 providers classified) |
+
+**Harvesting (65+ vendor targets)**
+
+| Module | Description |
+|---|---|
+| `harvester/` | OEM tool downloader + .sys extractor (base 10 sources) |
+| `harvester/oem` | 24 OEM BIOS/firmware tool sources (Dell, HP, Lenovo, ASUS, MSI, Gigabyte, ASRock, Biostar, AMI, Insyde, Phoenix) |
+| `harvester/rgb` | RGB/AIO/OC panel sources (Corsair iCUE, Razer Synapse, NZXT CAM, etc.) |
+| `harvester/storage` | Storage controller utility sources |
+| `harvester/sysinfo` | System info tool sources |
+| `harvester/bmc` | BMC/IPMI management tool sources |
+| `harvester/cn` | Chinese vendor tool sources |
+| `harvester/vpn` | VPN client sources with kernel drivers |
+| `winget_walk` | winget catalog walker, auto-extracts .sys from installers |
+| `bazaar` | MalwareBazaar + MalShare .sys pivot harvesting |
+| `wayback` | Wayback Machine snapshot enumeration for old driver versions |
+| `vxug` | VX-Underground archive harvesting |
+| `aipan` | 爱盘 (down.52pojie.cn) driver archive harvesting |
+| `cn_forums` | Kanxue + 52pojie thread scraper |
+| `browser_harvest` | Browser-based harvesting for JS-gated vendor portals |
+| `bulk_scrape` | Playwright-based vendor portal scraping (55 vendors, 10 regions) |
+| `regional` | LOLDrivers search filtered by vendor region (CN/KR/JP/TW/RU) |
+
+**Analysis and enrichment**
+
+| Module | Description |
+|---|---|
+| `db` | SQLite scan history with append-only schema |
+| `corpus` | Local corpus builder (system dirs, DriverStore, custom roots) |
+| `diff` | Diff two scan snapshots (new/removed/changed drivers) |
+| `hvci` | Offline WDAC/HVCI policy evaluation |
+| `tlsh_cluster` | TLSH fuzzy-hash clustering vs LOLDrivers-known hashes |
+| `find_novel` | Novelty check against LOLDrivers |
+| `wdm_filter` | WDM vs KMDF filter |
+| `pdb_resolver` | Microsoft symbol server PDB fetcher |
+| `fuzz_gen` | boofuzz IOCTL fuzzing harness generator |
+| `html_dossier` | HTML hunt dossier renderer |
+| `pipeline` | End-to-end orchestrator (all stages in sequence) |
+| `triage` | Claude API bulk triage |
 
 ## Recommended: pair with Claude for triage
 

@@ -477,6 +477,43 @@ def cmd_triage(args):
     return 0
 
 
+def cmd_pipeline(args):
+    from .pipeline import run
+    return run(args)
+
+
+def cmd_novel(args):
+    from .find_novel import check_novel
+
+    results = check_novel(
+        scan_json=args.scan_json,
+        lol_cache=args.lol_cache,
+    )
+
+    if args.json:
+        print(json.dumps(results, indent=2))
+    else:
+        novel = [r for r in results if r.get("novel")]
+        print(f"\n  {len(novel)} / {len(results)} drivers are novel "
+              f"(not in LOLDrivers)\n")
+        for r in novel:
+            print(f"  {r['filename']:<30} {', '.join(r.get('primitive_classes', []))}")
+
+    return 0
+
+
+def cmd_fuzz(args):
+    from .fuzz_gen import generate
+    from .ioctl import extract_ioctl_surface
+
+    surface = extract_ioctl_surface(args.driver)
+    out = args.out or f"fuzz_{Path(args.driver).stem}.py"
+    generate(args.driver, surface, out_path=out,
+             only_flagged=not args.all,
+             device_name_override=args.device)
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="driverscope",
@@ -494,17 +531,19 @@ Pipeline stages:
   wdm        Filter for WDM drivers with physmem primitives
   bulk       Bulk-scrape vendor portals via Playwright
   triage     Bulk Claude API triage of scan/ioctl findings
+  pipeline   End-to-end orchestrator (harvest + scan + enrich + diff + dossier)
+  novel      Check which drivers are not yet in LOLDrivers
+  fuzz       Generate boofuzz IOCTL fuzzing harness for a driver
 
 Examples:
   driverscope scan C:\\drivers --ioctl --json --export findings.json
   driverscope hunt --deep --export hits.json      Full system zero-day scan
   driverscope ioctl driver.sys                    Extract IOCTLs (single file)
   driverscope emulate driver.sys                  Trace DriverEntry via Speakeasy
-  driverscope emulate C:\\drivers --json           Batch emulate a directory
   driverscope harvest ./output --scan             Download + scan OEM drivers
-  driverscope regional --region CN,KR             Regional vendor search
-  driverscope bulk --list                         List vendor portals
-  driverscope bulk --vendors MSI-Support,ASRock-Support --scan
+  driverscope pipeline --all                      Full end-to-end hunt
+  driverscope novel findings.json                 LOLDrivers novelty check
+  driverscope fuzz driver.sys --out harness.py    Generate fuzzing harness
   driverscope triage findings.json --output triage.md
 """,
     )
@@ -619,6 +658,64 @@ Examples:
     p_triage.add_argument("--json", action="store_true",
                           help="JSON output instead of Markdown")
 
+    # -- pipeline --
+    p_pipe = sub.add_parser("pipeline",
+                            help="End-to-end orchestrator "
+                                 "(harvest + scan + enrich + diff + dossier)")
+    p_pipe.add_argument("--out", type=str, default=None,
+                        help="Output directory")
+    p_pipe.add_argument("--db", type=str, default=None,
+                        help="SQLite DB path")
+    p_pipe.add_argument("--target", type=str, default=None,
+                        help="Label for the scan target")
+    p_pipe.add_argument("--top", type=int, default=5,
+                        help="Top N picks in the dossier")
+    p_pipe.add_argument("--harvest", action="store_true",
+                        help="Run vendor source harvesting")
+    p_pipe.add_argument("--winget", action="store_true",
+                        help="Run winget catalog walk")
+    p_pipe.add_argument("--bazaar", action="store_true",
+                        help="Run MalwareBazaar + MalShare sourcing")
+    p_pipe.add_argument("--wayback", action="store_true",
+                        help="Run Wayback Machine snapshot enumeration")
+    p_pipe.add_argument("--wayback-url", action="append", default=[])
+    p_pipe.add_argument("--wayback-max", type=int, default=40)
+    p_pipe.add_argument("--no-system", action="store_true")
+    p_pipe.add_argument("--no-program-files", action="store_true")
+    p_pipe.add_argument("--no-wu-staged", action="store_true")
+    p_pipe.add_argument("--programdata", action="store_true")
+    p_pipe.add_argument("--localappdata", action="store_true")
+    p_pipe.add_argument("--extra-root", action="append", default=[])
+    p_pipe.add_argument("--include-pipeline-out", action="store_true")
+    p_pipe.add_argument("--include-common", action="store_true")
+    p_pipe.add_argument("--dedup-by-name", action="store_true")
+    p_pipe.add_argument("--enrich", action="store_true", default=True)
+    p_pipe.add_argument("--cluster", action="store_true")
+    p_pipe.add_argument("--tlsh-threshold", type=int, default=60)
+    p_pipe.add_argument("--hvci-simulate", action="store_true")
+    p_pipe.add_argument("--diff", action="store_true")
+    p_pipe.add_argument("--diff-scan-id", type=str, default=None)
+    p_pipe.add_argument("--dossier", action="store_true", default=True)
+    p_pipe.add_argument("--all", action="store_true",
+                        help="Enable all optional stages")
+
+    # -- novel --
+    p_novel = sub.add_parser("novel",
+                             help="Check which drivers are not in LOLDrivers")
+    p_novel.add_argument("scan_json", help="JSON from scan --json")
+    p_novel.add_argument("--lol-cache", help="LOLDrivers cache JSON path")
+    p_novel.add_argument("--json", action="store_true", help="JSON output")
+
+    # -- fuzz --
+    p_fuzz = sub.add_parser("fuzz",
+                            help="Generate boofuzz IOCTL fuzzing harness")
+    p_fuzz.add_argument("driver", help=".sys file to generate harness for")
+    p_fuzz.add_argument("--out", help="Output .py path")
+    p_fuzz.add_argument("--all", action="store_true",
+                        help="Include non-flagged IOCTLs")
+    p_fuzz.add_argument("--device", type=str, default="",
+                        help="Override device name")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -634,6 +731,9 @@ Examples:
         "bulk": cmd_bulk,
         "triage": cmd_triage,
         "emulate": cmd_emulate,
+        "pipeline": cmd_pipeline,
+        "novel": cmd_novel,
+        "fuzz": cmd_fuzz,
     }
 
     return commands[args.command](args)
